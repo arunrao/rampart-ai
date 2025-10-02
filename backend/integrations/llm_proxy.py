@@ -1,0 +1,237 @@
+"""
+LLM Proxy with Security and Observability
+Wraps LLM API calls with security checks and tracing
+"""
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+import time
+import asyncio
+from uuid import uuid4
+
+from models.prompt_injection_detector import PromptInjectionDetector
+from security.data_exfiltration_monitor import DataExfiltrationMonitor
+
+
+class LLMProxy:
+    """
+    Proxy for LLM API calls with integrated security and observability
+    """
+    
+    def __init__(self, provider: str = "openai"):
+        self.provider = provider
+        self.injection_detector = PromptInjectionDetector()
+        self.exfiltration_monitor = DataExfiltrationMonitor()
+        
+        # Initialize provider clients
+        self.clients = {}
+        self._init_clients()
+    
+    def _init_clients(self):
+        """Initialize LLM provider clients"""
+        # Lazy initialization - only import when needed
+        pass
+    
+    async def complete(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = "gpt-3.5-turbo",
+        trace_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        security_checks: bool = True,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Complete a chat conversation with security checks
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            model: Model to use
+            trace_id: Optional trace ID for observability
+            user_id: Optional user ID
+            security_checks: Whether to perform security checks
+            **kwargs: Additional arguments for the LLM API
+        
+        Returns:
+            Dict with response and metadata
+        """
+        start_time = time.time()
+        span_id = str(uuid4())
+        
+        result = {
+            "span_id": span_id,
+            "trace_id": trace_id,
+            "model": model,
+            "provider": self.provider,
+            "user_id": user_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "security_checks": {},
+            "response": None,
+            "error": None,
+            "blocked": False,
+            "latency_ms": 0,
+            "tokens_used": 0,
+            "cost": 0.0
+        }
+        
+        try:
+            # Pre-flight security checks on input
+            if security_checks:
+                input_security = await self._check_input_security(messages)
+                result["security_checks"]["input"] = input_security
+                
+                if input_security["blocked"]:
+                    result["blocked"] = True
+                    result["error"] = "Input blocked by security policy"
+                    result["latency_ms"] = (time.time() - start_time) * 1000
+                    return result
+            
+            # Make the LLM API call
+            llm_response = await self._call_llm(messages, model, **kwargs)
+            result["response"] = llm_response["content"]
+            result["tokens_used"] = llm_response.get("tokens_used", 0)
+            result["cost"] = self._calculate_cost(model, result["tokens_used"])
+            
+            # Post-flight security checks on output
+            if security_checks:
+                output_security = await self._check_output_security(
+                    llm_response["content"],
+                    context={"user_id": user_id, "trace_id": trace_id}
+                )
+                result["security_checks"]["output"] = output_security
+                
+                if output_security["blocked"]:
+                    result["blocked"] = True
+                    result["response"] = None
+                    result["error"] = "Output blocked by security policy"
+                elif output_security["redacted"]:
+                    result["response"] = output_security["redacted_content"]
+            
+        except Exception as e:
+            result["error"] = str(e)
+        
+        result["latency_ms"] = (time.time() - start_time) * 1000
+        return result
+    
+    async def _check_input_security(self, messages: List[Dict[str, str]]) -> Dict:
+        """Check input messages for security issues"""
+        security_result = {
+            "blocked": False,
+            "issues": [],
+            "risk_score": 0.0
+        }
+        
+        # Check each message for prompt injection
+        for msg in messages:
+            if msg["role"] == "user":
+                injection_result = self.injection_detector.detect(msg["content"])
+                
+                if injection_result["is_injection"]:
+                    security_result["issues"].append({
+                        "type": "prompt_injection",
+                        "severity": injection_result["risk_score"],
+                        "details": injection_result["detected_patterns"]
+                    })
+                    security_result["risk_score"] = max(
+                        security_result["risk_score"],
+                        injection_result["risk_score"]
+                    )
+        
+        # Block if high risk
+        if security_result["risk_score"] >= 0.8:
+            security_result["blocked"] = True
+        
+        return security_result
+    
+    async def _check_output_security(self, output: str, context: Dict) -> Dict:
+        """Check output for security issues"""
+        security_result = {
+            "blocked": False,
+            "redacted": False,
+            "redacted_content": None,
+            "issues": [],
+            "risk_score": 0.0
+        }
+        
+        # Check for data exfiltration
+        exfil_result = self.exfiltration_monitor.scan_output(output, context)
+        
+        if exfil_result["has_exfiltration_risk"]:
+            security_result["issues"].append({
+                "type": "data_exfiltration",
+                "severity": exfil_result["risk_score"],
+                "details": {
+                    "sensitive_data": exfil_result["sensitive_data_found"],
+                    "indicators": exfil_result["exfiltration_indicators"]
+                }
+            })
+            security_result["risk_score"] = exfil_result["risk_score"]
+            
+            # Apply recommendation
+            if exfil_result["recommendation"] == "BLOCK":
+                security_result["blocked"] = True
+            elif exfil_result["recommendation"] == "REDACT":
+                security_result["redacted"] = True
+                security_result["redacted_content"] = self.exfiltration_monitor.redact_sensitive_data(output)
+        
+        return security_result
+    
+    async def _call_llm(self, messages: List[Dict[str, str]], model: str, **kwargs) -> Dict:
+        """
+        Make the actual LLM API call
+        This is a mock implementation - replace with actual API calls
+        """
+        # Simulate API call
+        await asyncio.sleep(0.1)
+        
+        # Mock response
+        return {
+            "content": "This is a mock response from the LLM. In production, this would be the actual API response.",
+            "tokens_used": 50,
+            "model": model
+        }
+    
+    def _calculate_cost(self, model: str, tokens: int) -> float:
+        """Calculate cost based on model and tokens"""
+        # Pricing per 1K tokens (approximate)
+        pricing = {
+            "gpt-4": 0.03,
+            "gpt-3.5-turbo": 0.002,
+            "claude-3-opus": 0.015,
+            "claude-3-sonnet": 0.003
+        }
+        
+        price_per_1k = pricing.get(model, 0.002)
+        return (tokens / 1000) * price_per_1k
+
+
+class SecureLLMClient:
+    """
+    High-level client for secure LLM interactions
+    """
+    
+    def __init__(self, provider: str = "openai"):
+        self.proxy = LLMProxy(provider)
+    
+    async def chat(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Simple chat interface"""
+        messages = []
+        
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        
+        messages.append({"role": "user", "content": prompt})
+        
+        return await self.proxy.complete(messages, **kwargs)
+    
+    async def chat_with_history(
+        self,
+        messages: List[Dict[str, str]],
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Chat with conversation history"""
+        return await self.proxy.complete(messages, **kwargs)

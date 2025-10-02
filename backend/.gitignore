@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+*.coverage
+.coverage.*
+.pytest_cache/
+.mypy_cache/
+
+# Environments
+.venv/
+venv/
+.env
+.env.*
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Build & Dist
+build/
+dist/
+
+# Logs
+*.log
+
+# Byte-compiled / C extensions
+*.c
+*.cpp
+
+# FastAPI / Uvicorn
+uvicorn.log
+
+# Docker
+*.pid
