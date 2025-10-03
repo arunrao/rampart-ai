@@ -7,10 +7,13 @@ from typing import Any, Dict, Optional
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://rampart:rampart_dev_password@postgres:5432/rampart",
-)
+# Require DATABASE_URL to be set explicitly - no default credentials
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    # For local development only, use SQLite
+    DATABASE_URL = "sqlite:///./rampart_dev.db"
+    import logging
+    logging.warning("DATABASE_URL not set, using SQLite for development: %s", DATABASE_URL)
 
 _engine: Optional[Engine] = None
 

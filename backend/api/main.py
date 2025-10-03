@@ -9,14 +9,18 @@ import time
 import logging
 
 from api.config import get_settings
-from api.routes import health, traces, security, policies, content_filter, auth, providers
-from api.db import init_all_tables
+from api.routes import health, traces, security, policies, content_filter
+from api.db import init_defaults_table
+from api.middleware import (
+    SecurityHeadersMiddleware,
+    RateLimitMiddleware,
+    RequestSizeLimitMiddleware
+)
 
 # OpenTelemetry setup (safe if not available)
 try:
     from opentelemetry import trace as otel_trace
     from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -90,15 +94,29 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# Security middleware (order matters - applied in reverse)
+# 1. Request size limit (first check)
+app.add_middleware(RequestSizeLimitMiddleware, max_upload_size=10_000_000)
+
+# 2. Rate limiting
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_minute=settings.rate_limit_per_minute,
+    requests_per_hour=settings.rate_limit_per_hour
+)
+
+# 3. Security headers
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 4. CORS middleware
 # Parse comma-separated origins from config
 cors_origins = [origin.strip() for origin in settings.cors_origins.split(",")]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
 )
 
 # Instrument FastAPI app for tracing

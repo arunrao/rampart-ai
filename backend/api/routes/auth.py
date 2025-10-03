@@ -48,8 +48,9 @@ class TokenData(BaseModel):
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt"""
-    salt = bcrypt.gensalt()
+    """Hash a password using bcrypt with secure work factor"""
+    # Use work factor of 12 for better security (default is 12, but explicit is better)
+    salt = bcrypt.gensalt(rounds=12)
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
     return hashed.decode('utf-8')
 
@@ -75,7 +76,8 @@ def create_access_token(user_id: UUID, email: str) -> str:
 def decode_access_token(token: str) -> TokenData:
     """Decode and validate a JWT access token"""
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        # Hardcode algorithm to prevent "none" algorithm attack
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=["HS256"])
         user_id = UUID(payload.get("user_id"))
         email = payload.get("email")
         exp = datetime.fromtimestamp(payload.get("exp"))

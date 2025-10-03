@@ -1,12 +1,14 @@
 """
 Security analysis endpoints - prompt injection, data exfiltration, etc.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID, uuid4
 from enum import Enum
+
+from api.routes.auth import get_current_user, TokenData
 
 router = APIRouter()
 
@@ -176,7 +178,10 @@ def analyze_jailbreak(content: str) -> Optional[ThreatDetection]:
 
 
 @router.post("/analyze", response_model=SecurityAnalysisResponse)
-async def analyze_security(request: SecurityAnalysisRequest):
+async def analyze_security(
+    request: SecurityAnalysisRequest,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Analyze content for security threats"""
     import time
     import hashlib
@@ -247,6 +252,7 @@ async def analyze_security(request: SecurityAnalysisRequest):
 
 @router.get("/incidents", response_model=List[SecurityIncident])
 async def list_incidents(
+    current_user: TokenData = Depends(get_current_user),
     status: Optional[str] = None,
     severity: Optional[SeverityLevel] = None,
     limit: int = 50
@@ -264,7 +270,10 @@ async def list_incidents(
 
 
 @router.get("/incidents/{incident_id}", response_model=SecurityIncident)
-async def get_incident(incident_id: UUID):
+async def get_incident(
+    incident_id: UUID,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Get a specific security incident"""
     if incident_id not in security_incidents:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -272,7 +281,11 @@ async def get_incident(incident_id: UUID):
 
 
 @router.patch("/incidents/{incident_id}/status")
-async def update_incident_status(incident_id: UUID, status: str):
+async def update_incident_status(
+    incident_id: UUID,
+    status: str,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Update incident status"""
     if incident_id not in security_incidents:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -286,7 +299,7 @@ async def update_incident_status(incident_id: UUID, status: str):
 
 
 @router.get("/stats")
-async def get_security_stats():
+async def get_security_stats(current_user: TokenData = Depends(get_current_user)):
     """Get security statistics"""
     total_analyses = len(security_analyses)
     total_incidents = len(security_incidents)

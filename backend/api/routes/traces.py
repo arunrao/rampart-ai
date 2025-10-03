@@ -1,11 +1,13 @@
 """
-Observability and tracing endpoints
+Observability endpoints - traces, spans, analytics
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID, uuid4
+
+from api.routes.auth import get_current_user, TokenData
 
 router = APIRouter()
 
@@ -18,68 +20,11 @@ class TraceCreate(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
-class SpanCreate(BaseModel):
-    """Create a new span within a trace"""
-    trace_id: UUID
-    parent_span_id: Optional[UUID] = None
-    name: str
-    span_type: str = Field(..., description="llm, retrieval, tool, agent")
-    input_data: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class SpanUpdate(BaseModel):
-    """Update span with completion data"""
-    output_data: Optional[Dict[str, Any]] = None
-    tokens_used: Optional[int] = None
-    cost: Optional[float] = None
-    latency_ms: Optional[float] = None
-    status: str = Field(..., description="success, error, blocked")
-    error_message: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class Trace(BaseModel):
-    """Trace response model"""
-    id: UUID
-    session_id: Optional[str]
-    user_id: Optional[str]
-    name: str
-    created_at: datetime
-    updated_at: datetime
-    total_tokens: int = 0
-    total_cost: float = 0.0
-    total_latency_ms: float = 0.0
-    status: str
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class Span(BaseModel):
-    """Span response model"""
-    id: UUID
-    trace_id: UUID
-    parent_span_id: Optional[UUID]
-    name: str
-    span_type: str
-    input_data: Optional[Dict[str, Any]]
-    output_data: Optional[Dict[str, Any]]
-    tokens_used: Optional[int]
-    cost: Optional[float]
-    latency_ms: Optional[float]
-    status: str
-    error_message: Optional[str]
-    created_at: datetime
-    updated_at: datetime
-    metadata: Optional[Dict[str, Any]]
-
-
-# In-memory storage (replace with database in production)
-traces_db: Dict[UUID, Trace] = {}
-spans_db: Dict[UUID, Span] = {}
-
-
 @router.post("/traces", response_model=Trace, status_code=201)
-async def create_trace(trace: TraceCreate):
+async def create_trace(
+    trace: TraceCreate,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Create a new trace for observability"""
     trace_id = uuid4()
     new_trace = Trace(
@@ -98,9 +43,10 @@ async def create_trace(trace: TraceCreate):
 
 @router.get("/traces", response_model=List[Trace])
 async def list_traces(
+    current_user: TokenData = Depends(get_current_user),
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
-    limit: int = Query(50, le=100),
+    limit: int = 50,
     offset: int = 0
 ):
     """List traces with optional filtering"""
@@ -118,7 +64,10 @@ async def list_traces(
 
 
 @router.get("/traces/{trace_id}", response_model=Trace)
-async def get_trace(trace_id: UUID):
+async def get_trace(
+    trace_id: UUID,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Get a specific trace by ID"""
     if trace_id not in traces_db:
         raise HTTPException(status_code=404, detail="Trace not found")
@@ -126,7 +75,10 @@ async def get_trace(trace_id: UUID):
 
 
 @router.post("/spans", response_model=Span, status_code=201)
-async def create_span(span: SpanCreate):
+async def create_span(
+    span: SpanCreate,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Create a new span within a trace"""
     if span.trace_id not in traces_db:
         raise HTTPException(status_code=404, detail="Trace not found")
@@ -154,7 +106,11 @@ async def create_span(span: SpanCreate):
 
 
 @router.patch("/spans/{span_id}", response_model=Span)
-async def update_span(span_id: UUID, update: SpanUpdate):
+async def update_span(
+    span_id: UUID,
+    update: SpanUpdate,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Update span with completion data"""
     if span_id not in spans_db:
         raise HTTPException(status_code=404, detail="Span not found")
@@ -190,7 +146,10 @@ async def update_span(span_id: UUID, update: SpanUpdate):
 
 
 @router.get("/traces/{trace_id}/spans", response_model=List[Span])
-async def get_trace_spans(trace_id: UUID):
+async def get_trace_spans(
+    trace_id: UUID,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Get all spans for a trace"""
     if trace_id not in traces_db:
         raise HTTPException(status_code=404, detail="Trace not found")
@@ -201,7 +160,7 @@ async def get_trace_spans(trace_id: UUID):
 
 
 @router.get("/analytics/summary")
-async def get_analytics_summary():
+async def get_analytics_summary(current_user: TokenData = Depends(get_current_user)):
     """Get analytics summary"""
     total_traces = len(traces_db)
     total_spans = len(spans_db)

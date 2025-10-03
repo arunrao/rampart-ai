@@ -1,7 +1,7 @@
 """
 Content filtering endpoints - PII detection, toxicity, etc.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Tuple
 from functools import lru_cache
@@ -10,6 +10,8 @@ from datetime import datetime
 from uuid import UUID, uuid4
 from enum import Enum
 import re
+
+from api.routes.auth import get_current_user, TokenData
 
 router = APIRouter()
 
@@ -385,7 +387,10 @@ def detect_pii_presidio(content: str) -> Tuple[List[PIIEntity], Optional[str]]:
 
 
 @router.post("/filter", response_model=ContentFilterResponse)
-async def filter_content(request: ContentFilterRequest):
+async def filter_content(
+    request: ContentFilterRequest,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Filter content for PII, toxicity, and other issues"""
     import time
     # Top-level span for filter operation (nested under FastAPI request span)
@@ -514,13 +519,19 @@ async def filter_content(request: ContentFilterRequest):
 
 
 @router.post("/pii/detect", response_model=List[PIIEntity])
-async def detect_pii_only(content: str):
+async def detect_pii_only(
+    content: str,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Detect PII in content"""
     return detect_pii(content)
 
 
 @router.post("/pii/redact")
-async def redact_pii_only(content: str):
+async def redact_pii_only(
+    content: str,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Redact PII from content"""
     entities = detect_pii(content)
     redacted = redact_pii(content, entities)
@@ -532,13 +543,19 @@ async def redact_pii_only(content: str):
 
 
 @router.post("/toxicity/analyze", response_model=ToxicityScore)
-async def analyze_toxicity_only(content: str):
+async def analyze_toxicity_only(
+    content: str,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Analyze content toxicity"""
     return analyze_toxicity(content)
 
 
 @router.get("/filter/results/{result_id}", response_model=ContentFilterResponse)
-async def get_filter_result(result_id: UUID):
+async def get_filter_result(
+    result_id: UUID,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Get a specific filter result"""
     if result_id not in filter_results:
         raise HTTPException(status_code=404, detail="Filter result not found")
@@ -546,7 +563,7 @@ async def get_filter_result(result_id: UUID):
 
 
 @router.get("/filter/stats")
-async def get_filter_stats():
+async def get_filter_stats(current_user: TokenData = Depends(get_current_user)):
     """Get content filtering statistics"""
     total_filtered = len(filter_results)
     

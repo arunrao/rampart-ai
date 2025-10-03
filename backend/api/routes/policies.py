@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID, uuid4
 from enum import Enum
+
+from api.routes.auth import get_current_user, TokenData
 
 router = APIRouter()
 
@@ -32,7 +34,7 @@ class ContentFilterDefaults(BaseModel):
 
 
 @router.get("/policies/defaults/content-filter", response_model=ContentFilterDefaults)
-async def get_content_filter_defaults():
+async def get_content_filter_defaults(current_user: TokenData = Depends(get_current_user)):
     """Get default settings for content filter enforcement"""
     if not _DB_DEFAULTS:
         raise HTTPException(status_code=503, detail="Defaults store unavailable")
@@ -41,7 +43,10 @@ async def get_content_filter_defaults():
 
 
 @router.put("/policies/defaults/content-filter", response_model=ContentFilterDefaults)
-async def set_content_filter_defaults(payload: ContentFilterDefaults):
+async def set_content_filter_defaults(
+    payload: ContentFilterDefaults,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Set default settings for content filter enforcement"""
     if not _DB_DEFAULTS:
         raise HTTPException(status_code=503, detail="Defaults store unavailable")
@@ -205,7 +210,10 @@ def create_compliance_template(template: ComplianceTemplate) -> PolicyCreate:
 
 
 @router.post("/policies", response_model=Policy, status_code=201)
-async def create_policy(policy: PolicyCreate):
+async def create_policy(
+    policy: PolicyCreate,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Create a new policy"""
     policy_id = uuid4()
     new_policy = Policy(
@@ -225,9 +233,11 @@ async def create_policy(policy: PolicyCreate):
 
 @router.get("/policies", response_model=List[Policy])
 async def list_policies(
+    current_user: TokenData = Depends(get_current_user),
     policy_type: Optional[PolicyType] = None,
     enabled: Optional[bool] = None,
-    tags: Optional[str] = None
+    limit: int = 50,
+    offset: int = 0
 ):
     """List all policies with optional filtering"""
     filtered_policies = list(policies_db.values())
@@ -236,19 +246,16 @@ async def list_policies(
         filtered_policies = [p for p in filtered_policies if p.policy_type == policy_type]
     if enabled is not None:
         filtered_policies = [p for p in filtered_policies if p.enabled == enabled]
-    if tags:
-        tag_list = tags.split(",")
-        filtered_policies = [
-            p for p in filtered_policies 
-            if p.tags and any(tag in p.tags for tag in tag_list)
-        ]
     
     filtered_policies.sort(key=lambda x: x.created_at, reverse=True)
-    return filtered_policies
+    return filtered_policies[offset:offset + limit]
 
 
 @router.get("/policies/{policy_id}", response_model=Policy)
-async def get_policy(policy_id: UUID):
+async def get_policy(
+    policy_id: UUID,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Get a specific policy"""
     if policy_id not in policies_db:
         raise HTTPException(status_code=404, detail="Policy not found")
@@ -256,7 +263,11 @@ async def get_policy(policy_id: UUID):
 
 
 @router.put("/policies/{policy_id}", response_model=Policy)
-async def update_policy(policy_id: UUID, policy_update: PolicyCreate):
+async def update_policy(
+    policy_id: UUID,
+    policy_update: PolicyCreate,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Update an existing policy"""
     if policy_id not in policies_db:
         raise HTTPException(status_code=404, detail="Policy not found")
@@ -282,7 +293,10 @@ async def update_policy(policy_id: UUID, policy_update: PolicyCreate):
 
 
 @router.delete("/policies/{policy_id}")
-async def delete_policy(policy_id: UUID):
+async def delete_policy(
+    policy_id: UUID,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Delete a policy"""
     if policy_id not in policies_db:
         raise HTTPException(status_code=404, detail="Policy not found")
@@ -292,7 +306,10 @@ async def delete_policy(policy_id: UUID):
 
 
 @router.patch("/policies/{policy_id}/toggle")
-async def toggle_policy(policy_id: UUID):
+async def toggle_policy(
+    policy_id: UUID,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Enable or disable a policy"""
     if policy_id not in policies_db:
         raise HTTPException(status_code=404, detail="Policy not found")
@@ -309,7 +326,10 @@ async def toggle_policy(policy_id: UUID):
 
 
 @router.post("/policies/evaluate", response_model=PolicyEvaluationResponse)
-async def evaluate_policies(request: PolicyEvaluationRequest):
+async def evaluate_policies(
+    request: PolicyEvaluationRequest,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Evaluate content against policies"""
     violations = []
     actions_taken = []
@@ -377,7 +397,10 @@ async def evaluate_policies(request: PolicyEvaluationRequest):
 
 
 @router.post("/policies/templates/{template}", response_model=Policy, status_code=201)
-async def create_from_template(template: ComplianceTemplate):
+async def create_from_template(
+    template: ComplianceTemplate,
+    current_user: TokenData = Depends(get_current_user)
+):
     """Create a policy from a compliance template"""
     policy_template = create_compliance_template(template)
     if not policy_template:
@@ -387,7 +410,7 @@ async def create_from_template(template: ComplianceTemplate):
 
 
 @router.get("/policies/templates")
-async def list_templates():
+async def list_templates(current_user: TokenData = Depends(get_current_user)):
     """List available compliance templates"""
     return {
         "templates": [

@@ -7,7 +7,7 @@ services:
     container_name: rampart-postgres
     environment:
       POSTGRES_USER: rampart
-      POSTGRES_PASSWORD: rampart_dev_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rampart_dev_password}
       POSTGRES_DB: rampart
     ports:
       - "5432:5432"
@@ -42,16 +42,17 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://rampart:rampart_dev_password@postgres:5432/rampart
+      - DATABASE_URL=postgresql://rampart:${POSTGRES_PASSWORD:-rampart_dev_password}@postgres:5432/rampart
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret-key}
-      - KEY_ENCRYPTION_SECRET=${KEY_ENCRYPTION_SECRET:-dev-key-encryption-secret}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
+      - KEY_ENCRYPTION_SECRET=${KEY_ENCRYPTION_SECRET:?KEY_ENCRYPTION_SECRET must be set}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
     depends_on:
       postgres:
         condition: service_healthy
