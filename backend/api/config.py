@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 60
     rate_limit_per_hour: int = 1000
     
+    # CORS Configuration
+    cors_origins: str = "http://localhost:3000,http://localhost:3001"
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
