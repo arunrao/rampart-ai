@@ -8,8 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { policyApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function PoliciesPage() {
+  return (
+    <ProtectedRoute>
+      <PoliciesPageContent />
+    </ProtectedRoute>
+  );
+}
+
+function PoliciesPageContent() {
   const queryClient = useQueryClient();
 
   const { data: policies } = useQuery({

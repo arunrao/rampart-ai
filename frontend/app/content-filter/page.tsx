@@ -8,8 +8,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { contentFilterApi } from "@/lib/api";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function ContentFilterPage() {
+  return (
+    <ProtectedRoute>
+      <ContentFilterPageContent />
+    </ProtectedRoute>
+  );
+}
+
+function ContentFilterPageContent() {
   const [content, setContent] = useState("");
   const [filterResult, setFilterResult] = useState<any>(null);
 

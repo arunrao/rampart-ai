@@ -6,8 +6,17 @@ import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { observabilityApi, securityApi, contentFilterApi } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/utils";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function HomePage() {
+  return (
+    <ProtectedRoute>
+      <HomePageContent />
+    </ProtectedRoute>
+  );
+}
+
+function HomePageContent() {
   const { data: analyticsData } = useQuery({
     queryKey: ["analytics"],
     queryFn: observabilityApi.getAnalyticsSummary,
@@ -59,35 +68,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Shield className="h-8 w-8 text-blue-600" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Project Rampart</h1>
-                <p className="text-sm text-gray-600">AI Security & Observability</p>
-              </div>
-            </div>
-            <nav className="flex space-x-6">
-              <Link href="/observability" className="text-gray-700 hover:text-blue-600 transition">
-                Observability
-              </Link>
-              <Link href="/security" className="text-gray-700 hover:text-blue-600 transition">
-                Security
-              </Link>
-              <Link href="/policies" className="text-gray-700 hover:text-blue-600 transition">
-                Policies
-              </Link>
-              <Link href="/content-filter" className="text-gray-700 hover:text-blue-600 transition">
-                Content Filter
-              </Link>
-            </nav>
-          </div>
-        </div>
-      </header>
-
       {/* Main Content */}
       <main className="container mx-auto px-6 py-12">
         {/* Hero Section */}

@@ -7,8 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { securityApi } from "@/lib/api";
 import { formatDate, getSeverityColor, getStatusColor } from "@/lib/utils";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function SecurityPage() {
+  return (
+    <ProtectedRoute>
+      <SecurityPageContent />
+    </ProtectedRoute>
+  );
+}
+
+function SecurityPageContent() {
   const { data: incidents } = useQuery({
     queryKey: ["incidents"],
     queryFn: () => securityApi.getIncidents(),

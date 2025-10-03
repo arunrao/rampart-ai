@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     
+    # Google OAuth
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/callback/google"
+    
     # Security
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"

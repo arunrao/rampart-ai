@@ -3,12 +3,15 @@ Authentication endpoints - signup, login, JWT management
 """
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime, timedelta
 from uuid import UUID
 import jwt
 import bcrypt
+import httpx
+from urllib.parse import urlencode
 
 from api.config import get_settings
 from api.db import get_conn
@@ -19,16 +22,7 @@ security = HTTPBearer()
 settings = get_settings()
 
 
-class SignupRequest(BaseModel):
-    """User signup request"""
-    email: EmailStr
-    password: str = Field(..., min_length=8, description="Password must be at least 8 characters")
-
-
-class LoginRequest(BaseModel):
-    """User login request"""
-    email: EmailStr
-    password: str
+# Email/password auth removed - using Google OAuth only
 
 
 class UserResponse(BaseModel):
@@ -114,110 +108,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     return decode_access_token(token)
 
 
-@router.post("/auth/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def signup(request: SignupRequest):
-    """
-    Create a new user account.
-    
-    - **email**: Valid email address
-    - **password**: At least 8 characters
-    
-    Returns JWT token and user information.
-    """
-    # Check if user already exists
-    with get_conn() as conn:
-        existing = conn.execute(
-            text("SELECT id FROM users WHERE email = :email"),
-            {"email": request.email}
-        ).fetchone()
-        
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-        
-        # Hash password
-        password_hash = hash_password(request.password)
-        
-        # Create user
-        result = conn.execute(
-            text("""
-                INSERT INTO users (email, password_hash, created_at, updated_at)
-                VALUES (:email, :password_hash, :now, :now)
-                RETURNING id, email, created_at, is_active
-            """),
-            {
-                "email": request.email,
-                "password_hash": password_hash,
-                "now": datetime.utcnow()
-            }
-        )
-        conn.commit()
-        
-        user_row = result.fetchone()
-        user = UserResponse(
-            id=user_row[0],
-            email=user_row[1],
-            created_at=user_row[2],
-            is_active=user_row[3]
-        )
-        
-        # Create JWT token
-        token = create_access_token(user.id, user.email)
-        
-        return AuthResponse(token=token, user=user)
-
-
-@router.post("/auth/login", response_model=AuthResponse)
-async def login(request: LoginRequest):
-    """
-    Login with email and password.
-    
-    Returns JWT token and user information.
-    """
-    with get_conn() as conn:
-        result = conn.execute(
-            text("""
-                SELECT id, email, password_hash, created_at, is_active
-                FROM users
-                WHERE email = :email
-            """),
-            {"email": request.email}
-        ).fetchone()
-        
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
-            )
-        
-        user_id, email, password_hash, created_at, is_active = result
-        
-        # Verify password
-        if not verify_password(request.password, password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
-            )
-        
-        if not is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account is inactive"
-            )
-        
-        user = UserResponse(
-            id=user_id,
-            email=email,
-            created_at=created_at,
-            is_active=is_active
-        )
-        
-        # Create JWT token
-        token = create_access_token(user.id, user.email)
-        
-        return AuthResponse(token=token, user=user)
+# Email/password signup and login removed - using Google OAuth only
 
 
 @router.get("/auth/me", response_model=UserResponse)
@@ -284,3 +175,135 @@ async def refresh_token(current_user: TokenData = Depends(get_current_user)):
         token = create_access_token(user.id, user.email)
         
         return AuthResponse(token=token, user=user)
+
+
+@router.get("/auth/google/login")
+async def google_login():
+    """
+    Initiate Google OAuth login flow.
+    Redirects user to Google's OAuth consent screen.
+    """
+    if not settings.google_client_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth not configured"
+        )
+    
+    # Build Google OAuth URL
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": settings.google_redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "online",
+        "prompt": "select_account"
+    }
+    
+    google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    return RedirectResponse(google_auth_url)
+
+
+@router.get("/auth/callback/google", response_model=AuthResponse)
+async def google_callback(code: str, state: Optional[str] = None):
+    """
+    Handle Google OAuth callback.
+    Exchanges authorization code for user info and creates/logs in user.
+    """
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth not configured"
+        )
+    
+    # Exchange code for access token
+    token_url = "https://oauth2.googleapis.com/token"
+    token_data = {
+        "code": code,
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "redirect_uri": settings.google_redirect_uri,
+        "grant_type": "authorization_code"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        # Get access token
+        token_response = await client.post(token_url, data=token_data)
+        if token_response.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to exchange code for token"
+            )
+        
+        token_json = token_response.json()
+        access_token = token_json.get("access_token")
+        
+        # Get user info from Google
+        userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
+        userinfo_response = await client.get(
+            userinfo_url,
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        
+        if userinfo_response.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to get user info from Google"
+            )
+        
+        userinfo = userinfo_response.json()
+        email = userinfo.get("email")
+        
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email not provided by Google"
+            )
+    
+    # Check if user exists, create if not
+    with get_conn() as conn:
+        existing = conn.execute(
+            text("SELECT id, email, created_at, is_active FROM users WHERE email = :email"),
+            {"email": email}
+        ).fetchone()
+        
+        if existing:
+            # User exists, log them in
+            user = UserResponse(
+                id=existing[0],
+                email=existing[1],
+                created_at=existing[2],
+                is_active=existing[3]
+            )
+        else:
+            # Create new user (no password needed for OAuth users)
+            # Use a random hash as placeholder since password field is required
+            placeholder_hash = hash_password(bcrypt.gensalt().decode('utf-8'))
+            
+            result = conn.execute(
+                text("""
+                    INSERT INTO users (email, password_hash, created_at, updated_at)
+                    VALUES (:email, :password_hash, :now, :now)
+                    RETURNING id, email, created_at, is_active
+                """),
+                {
+                    "email": email,
+                    "password_hash": placeholder_hash,
+                    "now": datetime.utcnow()
+                }
+            )
+            conn.commit()
+            
+            user_row = result.fetchone()
+            user = UserResponse(
+                id=user_row[0],
+                email=user_row[1],
+                created_at=user_row[2],
+                is_active=user_row[3]
+            )
+        
+        # Create JWT token
+        token = create_access_token(user.id, user.email)
+        
+        # Redirect to frontend with token
+        frontend_url = f"http://localhost:3000/auth/callback?token={token}"
+        return RedirectResponse(frontend_url)

@@ -7,8 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { observabilityApi } from "@/lib/api";
 import { formatDate, formatCurrency, formatNumber, getStatusColor } from "@/lib/utils";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function ObservabilityPage() {
+  return (
+    <ProtectedRoute>
+      <ObservabilityPageContent />
+    </ProtectedRoute>
+  );
+}
+
+function ObservabilityPageContent() {
   const { data: traces } = useQuery({
     queryKey: ["traces"],
     queryFn: () => observabilityApi.getTraces({ limit: 50 }),
