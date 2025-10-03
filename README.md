@@ -1221,6 +1221,123 @@ Our roadmap aligns with emerging standards and research:
 
 This is why Phase 2 focuses on securing the **reasoning layer**, not just the API layer.
 
+## Competitive Positioning
+
+Below is a concise, standards-aligned comparison of Rampart with adjacent offerings. It is intended to help teams decide how to combine controls to satisfy OWASP and NIST-aligned requirements across prevention, detection, and governance.
+
+- **Rampart (this project)**
+  - **Focus**: Self-hosted, developer-first platform for app-layer LLM security and observability. Wraps LLM calls with input/output checks, policy, and tracing.
+  - **Strengths**: Open code; secure LLM proxy (`backend/integrations/llm_proxy.py`); prompt injection detection (`backend/models/prompt_injection_detector.py`); data exfiltration controls (`backend/security/data_exfiltration_monitor.py`); content filter and policy engine (`backend/api/routes/content_filter.py`, `backend/api/routes/policies.py`); observability and cost tracking; production hardening.
+  - **Limitations**: Heuristic detectors; no streaming yet; agentic controls (memory/tool/goal) are roadmap Phase 2; cryptographic trust layer is research/Phase 3.
+  - **Best fit**: Teams needing on-prem/open components to secure product LLM workflows with policy + observability aligned to OWASP/NIST.
+
+- **Lakera**
+  - **Focus**: Guardrails for prompt injection/jailbreak and safety at I/O boundaries.
+  - **Strengths**: Specialized guardrails; fast integration for input/output filtering.
+  - **Limitations vs Rampart**: Less emphasis on in-app observability, policy engine, or self-hosted full-stack controls.
+  - **Fit with Rampart**: Complementary as an additional safety signal at ingress/egress.
+
+- **Protect AI**
+  - **Focus**: ML supply chain and pipeline security (models, packages, SBOM, CI/CD posture).
+  - **Strengths**: Governance and assurance across ML lifecycle artifacts.
+  - **Limitations vs Rampart**: Not centered on runtime LLM request/response security, content filtering, or app-layer policy enforcement.
+  - **Fit with Rampart**: Complementary—pair lifecycle assurance (Protect AI) with runtime LLM controls (Rampart).
+
+- **Prompt Armor**
+  - **Focus**: Red teaming, jailbreak datasets, prompt safety testing/firewalling.
+  - **Strengths**: Improves testing coverage and attack simulation at the prompt layer.
+  - **Limitations vs Rampart**: Testing-oriented; not a full in-app proxy + policy + observability stack.
+  - **Fit with Rampart**: Use for continuous testing; enforce outcomes with Rampart policies.
+
+- **Cequence**
+  - **Focus**: API security and bot defense across web/mobile APIs.
+  - **Strengths**: Mature API abuse and bot mitigation controls.
+  - **Limitations vs Rampart**: Not specialized for LLM reasoning/content risks (prompt injection, exfiltration, PII redaction) or LLM-specific observability.
+  - **Fit with Rampart**: Layer API/bot protection with Rampart’s LLM-specific controls.
+
+- **NVIDIA NeMo Guardrails**
+  - **Focus**: Policy/rail specifications and runtime enforcement patterns for LLM apps.
+  - **Strengths**: Declarative rail definitions; ecosystem tooling.
+  - **Limitations vs Rampart**: Opinionated framework; less emphasis on integrated observability/cost metrics and turnkey policies/compliance templates.
+  - **Fit with Rampart**: Can be used for rule authoring; Rampart provides broader platform, metrics, and security integrations.
+
+- **LlamaGuard (Meta)**
+  - **Focus**: Safety classification models for content moderation categories.
+  - **Strengths**: Model-based classification signals.
+  - **Limitations vs Rampart**: Provides a signal, not an end-to-end proxy, policy engine, or observability plane.
+  - **Fit with Rampart**: Integrate as an additional classifier within Rampart’s content filtering pipeline.
+
+- **Rebuff**
+  - **Focus**: Prompt injection detection techniques and tooling.
+  - **Strengths**: Detection research and utilities.
+  - **Limitations vs Rampart**: Narrow scope on detection; lacks broader enforcement, tracing, and platform components.
+  - **Fit with Rampart**: Additional input-safety signal to improve coverage.
+
+- **Guardrails.ai**
+  - **Focus**: Validation/guardrails for LLM outputs and schemas.
+  - **Strengths**: Output validation patterns and developer tooling.
+  - **Limitations vs Rampart**: Not a full security + observability platform with policy, tracing, and exfiltration controls.
+  - **Fit with Rampart**: Combine validation with Rampart’s enforcement and audit trail.
+
+### Summary
+
+- **Rampart** = app-layer LLM security + observability + policy, self-hosted, standards-aligned. Best as the in-product gateway enforcing OWASP/NIST-aligned controls.
+- **Supply chain (e.g., Protect AI)** strengthens lifecycle governance; **API security (e.g., Cequence)** protects generic APIs; **guardrails/testing (e.g., Lakera, Prompt Armor, NeMo Guardrails, LlamaGuard, Rebuff, Guardrails.ai)** provide signals and rails. These can be combined with Rampart for layered defense.
+
+### Additional Solutions
+
+- **AWS Bedrock Guardrails**
+  - **Focus**: Provider-native guardrails/policies for Bedrock models.
+  - **Strengths**: Enterprise integration; configurable safety/PII controls.
+  - **Limitations vs Rampart**: AWS-only scope; limited cross-provider policy/observability.
+  - **Fit with Rampart**: Use as provider-side layer; Rampart enforces org-wide policies across vendors.
+
+- **Google Vertex AI Guardrails / Safety Filters**
+  - **Focus**: Safety filters integrated with Vertex pipelines.
+  - **Strengths**: GCP-native governance; safety categories.
+  - **Limitations vs Rampart**: GCP-centric; uneven multi-provider consistency.
+  - **Fit with Rampart**: Combine provider safety with Rampart’s central proxy, policies, and tracing.
+
+- **Azure AI Content Safety**
+  - **Focus**: Content moderation and safety categories.
+  - **Strengths**: Microsoft ecosystem integration.
+  - **Limitations vs Rampart**: Azure-centric; content-first vs full app-layer security.
+  - **Fit with Rampart**: Treat as signal; Rampart conducts enforcement and audit across providers.
+
+- **OpenAI Moderation**
+  - **Focus**: Simple moderation scores via API.
+  - **Strengths**: Low friction signal.
+  - **Limitations vs Rampart**: Not a policy/observability/exfiltration platform.
+  - **Fit with Rampart**: Feed scores to `content_filter` and policy actions.
+
+- **Anthropic Safety Filters**
+  - **Focus**: Model-tuned safety behavior.
+  - **Strengths**: Native to provider.
+  - **Limitations vs Rampart**: Provider-specific, limited transparency/customization.
+  - **Fit with Rampart**: Use as input to Rampart’s allow/block/redact.
+
+- **Prompt Security / Lasso Security / CalypsoAI Moderator / Robust Intelligence (AI Firewall)**
+  - **Focus**: GenAI firewall/guard/testing offerings.
+  - **Strengths**: Runtime protections and/or red teaming.
+  - **Limitations vs Rampart**: Varying depth in policy engines, observability, on-prem options.
+  - **Fit with Rampart**: Complementary signals; Rampart provides unified enforcement and auditing.
+
+- **HiddenLayer**
+  - **Focus**: Model and ML security (adversarial risks, supply chain).
+  - **Strengths**: Lifecycle security posture.
+  - **Limitations vs Rampart**: Not focused on LLM request/response policy, PII redaction, observability.
+  - **Fit with Rampart**: Pair lifecycle assurance with Rampart runtime controls.
+
+### Landscape Matrix
+
+| Category | Examples | Primary focus | Strengths | Limitations vs Rampart | Fit with Rampart |
+|---|---|---|---|---|---|
+| App-layer LLM security (self-hosted) | Rampart | Proxy + policy + input/output checks + observability | Open code, provider-agnostic enforcement, audit | Heuristic detectors; agentic/crypto layers in roadmap | Core gateway for OWASP/NIST-aligned controls |
+| Guardrails/testing | Lakera, Prompt Armor, NeMo Guardrails, Guardrails.ai, LlamaGuard, Rebuff | Prompt/response safety signals, rails, testing | Fast integration, strong safety signals | Not a full policy/observability/exfiltration plane | Use as signals into Rampart decisions |
+| Provider-native guardrails | AWS Bedrock, Vertex AI, Azure AI Content Safety, OpenAI Moderation, Anthropic Filters | Safety/moderation at provider | Native ecosystem features | Cloud/model lock-in; limited cross-provider view | Combine with Rampart for org-wide policy and tracing |
+| API security (generic) | Cequence | API/bot defense | Mature API protection | Not specialized for LLM reasoning/content risks | Layer under Rampart’s LLM-specific checks |
+| ML supply chain | Protect AI, HiddenLayer, Robust Intelligence | Model/package/SBOM, CI/CD posture | Lifecycle governance | Limited runtime LLM app protections | Complement with Rampart at runtime |
+
 ## Documentation
 
 - **[SETUP_SECURE.md](SETUP_SECURE.md)**: Production deployment guide
