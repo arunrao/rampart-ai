@@ -1028,7 +1028,7 @@ Rampart currently focuses on **securing LLM API interactions** - the request/res
 
 ## Product Roadmap
 
-### Phase 1: Enhanced LLM Security (Q1 2026)
+### Phase 1: Enhanced LLM Security
 **Goal**: Improve detection accuracy and production readiness
 
 - [ ] **ML-based prompt injection detection**
@@ -1054,7 +1054,7 @@ Rampart currently focuses on **securing LLM API interactions** - the request/res
 
 ---
 
-### Phase 2: Agentic AI Security (Q2-Q3 2026)
+### Phase 2: Agentic AI Security
 **Goal**: Extend protection to autonomous AI agents with memory, tools, and goals
 
 Based on emerging threats identified by [OWASP Agentic AI Security](https://agenticsecurity.info), [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework), and the AI security research community, we're expanding Rampart to address the unique vulnerabilities of agentic systems.
@@ -1169,7 +1169,7 @@ Agent C: Relies on Agent B's assessments, also compromised
 
 ---
 
-### Phase 3: Cryptographic Trust Layer (Q4 2026)
+### Phase 3: Cryptographic Trust Layer
 **Goal**: Shift from reactive detection to proactive prevention with cryptographic verification
 
 Inspired by how TLS/SSL transformed web security, we're exploring a **cryptographic trust layer** for AI agents.
@@ -1190,9 +1190,21 @@ Inspired by how TLS/SSL transformed web security, we're exploring a **cryptograp
 
 **Note on scope and standards**: Cryptographic trust layers for AI (for example, signed tool invocations and workflow attestation) are an active research area. Consistent with guidance from OWASP and NIST, we treat them as part of a layered security posture that pairs preventive verification with policy enforcement, monitoring, and governance—given the probabilistic nature of AI reasoning and residual need for runtime controls.
 
+**Standards & References (non-exhaustive):**
+- OWASP: LLM Top 10 and Agentic AI guidance on provenance and integrity controls (https://owasp.org/www-project-top-10-for-large-language-model-applications/ and https://agenticsecurity.info)
+- NIST AI Risk Management Framework (AI RMF 1.0): functions for governance, maps to provenance/assurance (https://www.nist.gov/itl/ai-risk-management-framework)
+- IETF RATS (Remote ATtestation Procedures) Architecture, RFC 9334: attestation evidence and verifiers (https://www.rfc-editor.org/rfc/rfc9334)
+- IETF SCITT (Supply Chain Integrity, Transparency, and Trust): transparency services for signed claims (https://datatracker.ietf.org/group/scitt/documents/)
+- SLSA (Supply-chain Levels for Software Artifacts): provenance and integrity for build and deployment (https://slsa.dev)
+- in-toto: supply-chain layout and step attestations (https://in-toto.io)
+- Sigstore: keyless signing and transparency logs for artifacts (https://www.sigstore.dev)
+- W3C Verifiable Credentials Data Model 2.0: cryptographically verifiable claims (https://www.w3.org/TR/vc-data-model-2.0/)
+- Confidential Computing Consortium: TEEs and remote attestation patterns (https://confidentialcomputing.io)
+- MITRE ATLAS: adversarial techniques against AI systems to inform protection goals (https://atlas.mitre.org)
+
 ---
 
-### Phase 4: Enterprise Agentic Platform (2027)
+### Phase 4: Enterprise Agentic Platform
 **Goal**: Complete enterprise-grade agentic AI security platform
 
 - [ ] Multi-tenancy with tenant isolation
@@ -1337,6 +1349,24 @@ Below is a concise, standards-aligned comparison of Rampart with adjacent offeri
 | Provider-native guardrails | AWS Bedrock, Vertex AI, Azure AI Content Safety, OpenAI Moderation, Anthropic Filters | Safety/moderation at provider | Native ecosystem features | Cloud/model lock-in; limited cross-provider view | Combine with Rampart for org-wide policy and tracing |
 | API security (generic) | Cequence | API/bot defense | Mature API protection | Not specialized for LLM reasoning/content risks | Layer under Rampart’s LLM-specific checks |
 | ML supply chain | Protect AI, HiddenLayer, Robust Intelligence | Model/package/SBOM, CI/CD posture | Lifecycle governance | Limited runtime LLM app protections | Complement with Rampart at runtime |
+
+#### Rampart vs. Langfuse (short)
+
+- **Purpose**
+  - **Rampart**: Security gateway + observability. Enforces policy and blocks/redacts unsafe I/O at runtime.
+  - **Langfuse**: Observability/analytics (traces, evals, product analytics). Passive by design.
+
+- **Inline enforcement**
+  - **Rampart**: Pre-/post-flight checks with actions: ALLOW/BLOCK/REDACT/ALERT.
+    - See `backend/integrations/llm_proxy.py`, `backend/models/prompt_injection_detector.py`, `backend/security/data_exfiltration_monitor.py`, `backend/api/routes/content_filter.py`, `backend/api/routes/policies.py`.
+  - **Langfuse**: No blocking or redaction. Complements enforcement layers.
+
+- **Compliance & governance alignment**
+  - **Rampart**: Policy templates (GDPR/HIPAA/SOC 2), incident logging, cost attribution tied to security events—aligned to OWASP/NIST guidance.
+  - **Langfuse**: Great for telemetry and evaluations, not a policy enforcement plane.
+
+- **How they work together**
+  - Use Rampart as the in-product security gateway; export selected traces/metrics to Langfuse for analytics if desired.
 
 ## Documentation
 
