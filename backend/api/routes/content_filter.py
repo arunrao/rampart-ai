@@ -13,6 +13,13 @@ import re
 
 router = APIRouter()
 
+# Optional DB-backed defaults availability
+try:
+    from api.db import get_default
+    _DB_OK = True
+except Exception:  # pragma: no cover
+    _DB_OK = False
+
 # Optional OpenTelemetry tracing
 try:
     from opentelemetry import trace as otel_trace  # type: ignore

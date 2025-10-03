@@ -1,3 +1,12 @@
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+from uuid import UUID, uuid4
+from enum import Enum
+
+router = APIRouter()
+
 # Optional DB-backed defaults
 try:
     from api.db import get_default, set_default
@@ -44,14 +53,6 @@ async def set_content_filter_defaults(payload: ContentFilterDefaults):
 """
 Policy management endpoints
 """
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import datetime
-from uuid import UUID, uuid4
-from enum import Enum
-
-router = APIRouter()
 
 
 class PolicyType(str, Enum):
