@@ -74,3 +74,55 @@ def set_default(key: str, value: Dict[str, Any]) -> None:
             {"k": key, "v": json.dumps(value), "u": datetime.utcnow()},
         )
         conn.commit()
+
+
+def init_users_table() -> None:
+    """Create users table for authentication."""
+    with get_conn() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                  email TEXT UNIQUE NOT NULL,
+                  password_hash TEXT NOT NULL,
+                  created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                  updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                  is_active BOOLEAN NOT NULL DEFAULT TRUE
+                );
+                CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+                """
+            )
+        )
+        conn.commit()
+
+
+def init_provider_keys_table() -> None:
+    """Create provider_keys table for storing encrypted API keys."""
+    with get_conn() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS provider_keys (
+                  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                  provider TEXT NOT NULL,
+                  key_encrypted TEXT NOT NULL,
+                  last_4 TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'active',
+                  created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                  updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                  UNIQUE(user_id, provider)
+                );
+                CREATE INDEX IF NOT EXISTS idx_provider_keys_user_id ON provider_keys(user_id);
+                """
+            )
+        )
+        conn.commit()
+
+
+def init_all_tables() -> None:
+    """Initialize all database tables."""
+    init_defaults_table()
+    init_users_table()
+    init_provider_keys_table()

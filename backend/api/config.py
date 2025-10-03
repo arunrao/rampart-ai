@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    key_encryption_secret: str  # For encrypting user API keys
     
     # Content Filtering
     max_token_limit: int = 4096

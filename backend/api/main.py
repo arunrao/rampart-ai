@@ -9,8 +9,8 @@ import time
 import logging
 
 from api.config import get_settings
-from api.routes import health, traces, security, policies, content_filter
-from api.db import init_defaults_table
+from api.routes import health, traces, security, policies, content_filter, auth, providers
+from api.db import init_all_tables
 
 # OpenTelemetry setup (safe if not available)
 try:
@@ -71,10 +71,10 @@ async def lifespan(app: FastAPI):
     # Initialize services
     # TODO: Initialize database connections, ML models, etc.
     try:
-        init_defaults_table()
-        logger.info("Policy defaults table ensured")
+        init_all_tables()
+        logger.info("Database tables initialized (users, provider_keys, policy_defaults)")
     except Exception as e:
-        logger.warning(f"Failed to init defaults table: {e}")
+        logger.warning(f"Failed to init database tables: {e}")
     
     yield
     
@@ -132,6 +132,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Include routers
 app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])
+app.include_router(auth.router, prefix=settings.api_prefix, tags=["auth"])
+app.include_router(providers.router, prefix=settings.api_prefix, tags=["providers"])
 app.include_router(traces.router, prefix=settings.api_prefix, tags=["observability"])
 app.include_router(security.router, prefix=settings.api_prefix, tags=["security"])
 app.include_router(policies.router, prefix=settings.api_prefix, tags=["policies"])

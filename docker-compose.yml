@@ -46,6 +46,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret-key}
+      - KEY_ENCRYPTION_SECRET=${KEY_ENCRYPTION_SECRET:-dev-key-encryption-secret}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317

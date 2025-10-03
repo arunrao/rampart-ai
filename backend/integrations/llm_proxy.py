@@ -6,7 +6,8 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 import time
 import asyncio
-from uuid import uuid4
+import os
+from uuid import UUID, uuid4
 
 from models.prompt_injection_detector import PromptInjectionDetector
 from security.data_exfiltration_monitor import DataExfiltrationMonitor
@@ -36,7 +37,7 @@ class LLMProxy:
         messages: List[Dict[str, str]],
         model: str = "gpt-3.5-turbo",
         trace_id: Optional[str] = None,
-        user_id: Optional[str] = None,
+        user_id: Optional[UUID] = None,
         security_checks: bool = True,
         **kwargs
     ) -> Dict[str, Any]:
@@ -85,8 +86,8 @@ class LLMProxy:
                     result["latency_ms"] = (time.time() - start_time) * 1000
                     return result
             
-            # Make the LLM API call
-            llm_response = await self._call_llm(messages, model, **kwargs)
+            # Make the LLM API call (with user's API key if available)
+            llm_response = await self._call_llm(messages, model, user_id=user_id, **kwargs)
             result["response"] = llm_response["content"]
             result["tokens_used"] = llm_response.get("tokens_used", 0)
             result["cost"] = self._calculate_cost(model, result["tokens_used"])
@@ -175,20 +176,93 @@ class LLMProxy:
         
         return security_result
     
-    async def _call_llm(self, messages: List[Dict[str, str]], model: str, **kwargs) -> Dict:
+    async def _call_llm(self, messages: List[Dict[str, str]], model: str, user_id: Optional[UUID] = None, **kwargs) -> Dict:
         """
-        Make the actual LLM API call
-        This is a mock implementation - replace with actual API calls
+        Make the actual LLM API call using user's API key if available
         """
-        # Simulate API call
-        await asyncio.sleep(0.1)
+        api_key = None
         
-        # Mock response
-        return {
-            "content": "This is a mock response from the LLM. In production, this would be the actual API response.",
-            "tokens_used": 50,
-            "model": model
-        }
+        # Try to get user's API key first
+        if user_id:
+            try:
+                from api.routes.providers import get_user_provider_key
+                api_key = get_user_provider_key(user_id, self.provider)
+            except Exception:
+                pass
+        
+        # Fall back to system env key if user doesn't have one
+        if not api_key:
+            if self.provider == "openai":
+                api_key = os.getenv("OPENAI_API_KEY")
+            elif self.provider == "anthropic":
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+        
+        if not api_key:
+            raise ValueError(f"No API key available for provider: {self.provider}")
+        
+        # Make actual API call based on provider
+        if self.provider == "openai":
+            return await self._call_openai(messages, model, api_key, **kwargs)
+        elif self.provider == "anthropic":
+            return await self._call_anthropic(messages, model, api_key, **kwargs)
+        else:
+            # Fallback mock for unsupported providers
+            await asyncio.sleep(0.1)
+            return {
+                "content": "This is a mock response from the LLM. In production, this would be the actual API response.",
+                "tokens_used": 50,
+                "model": model
+            }
+    
+    async def _call_openai(self, messages: List[Dict[str, str]], model: str, api_key: str, **kwargs) -> Dict:
+        """Call OpenAI API"""
+        try:
+            import openai
+            client = openai.AsyncOpenAI(api_key=api_key)
+            
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                **kwargs
+            )
+            
+            return {
+                "content": response.choices[0].message.content,
+                "tokens_used": response.usage.total_tokens,
+                "model": model
+            }
+        except Exception as e:
+            raise Exception(f"OpenAI API call failed: {str(e)}")
+    
+    async def _call_anthropic(self, messages: List[Dict[str, str]], model: str, api_key: str, **kwargs) -> Dict:
+        """Call Anthropic API"""
+        try:
+            import anthropic
+            client = anthropic.AsyncAnthropic(api_key=api_key)
+            
+            # Convert messages format for Anthropic
+            system_msg = None
+            user_messages = []
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_msg = msg["content"]
+                else:
+                    user_messages.append(msg)
+            
+            response = await client.messages.create(
+                model=model,
+                max_tokens=kwargs.get("max_tokens", 1024),
+                system=system_msg,
+                messages=user_messages
+            )
+            
+            return {
+                "content": response.content[0].text,
+                "tokens_used": response.usage.input_tokens + response.usage.output_tokens,
+                "model": model
+            }
+        except Exception as e:
+            raise Exception(f"Anthropic API call failed: {str(e)}")
     
     def _calculate_cost(self, model: str, tokens: int) -> float:
         """Calculate cost based on model and tokens"""
