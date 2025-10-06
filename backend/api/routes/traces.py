@@ -219,6 +219,14 @@ async def get_trace_spans(
     return trace_spans
 
 
+@router.get("/stats")
+async def get_general_stats(current_user: TokenData = Depends(get_current_user)):
+    """Get general statistics summary"""
+    # This endpoint provides basic stats for the dashboard
+    # Redirect to the comprehensive analytics summary
+    return await get_analytics_summary(current_user)
+
+
 @router.get("/analytics/summary")
 async def get_analytics_summary(current_user: TokenData = Depends(get_current_user)):
     """Get comprehensive analytics summary including both JWT and API key activity"""
@@ -239,22 +247,27 @@ async def get_analytics_summary(current_user: TokenData = Depends(get_current_us
     
     try:
         with get_conn() as conn:
-            # Get all API keys for this user
+            # Get aggregated usage stats for all API keys for this user
             api_keys_result = conn.execute(
                 text("""
-                    SELECT total_requests, tokens_used, cost_usd 
-                    FROM rampart_api_keys 
-                    WHERE user_id = :user_id AND is_active = true
+                    SELECT 
+                        COALESCE(SUM(u.requests_count), 0) as total_requests,
+                        COALESCE(SUM(u.tokens_used), 0) as total_tokens,
+                        COALESCE(SUM(u.cost_usd), 0) as total_cost
+                    FROM rampart_api_keys k
+                    LEFT JOIN rampart_api_key_usage u ON k.id = u.api_key_id
+                    WHERE k.user_id = :user_id AND k.is_active = true
                 """),
                 {"user_id": current_user.user_id}
-            ).fetchall()
+            ).fetchone()
             
-            for key_stats in api_keys_result:
-                api_key_requests += key_stats[0] or 0
-                api_key_tokens += key_stats[1] or 0
-                api_key_cost += key_stats[2] or 0.0
-    except Exception:
+            if api_keys_result:
+                api_key_requests = api_keys_result[0] or 0
+                api_key_tokens = api_keys_result[1] or 0
+                api_key_cost = api_keys_result[2] or 0.0
+    except Exception as e:
         # If database query fails, continue with trace data only
+        print(f"Error fetching API key usage: {e}")
         pass
     
     # Aggregate totals

@@ -418,26 +418,60 @@ async def get_current_user_from_api_key(api_key: str) -> tuple[TokenData, UUID]:
 
 def track_api_key_usage(api_key_id: UUID, endpoint: str, tokens_used: int = 0, cost_usd: float = 0.0):
     """Track usage for an API key"""
+    from api.db import DATABASE_URL
+    
     with get_conn() as conn:
-        # Insert or update usage record
-        conn.execute(
-            text("""
-                INSERT INTO rampart_api_key_usage (
-                    api_key_id, endpoint, requests_count, tokens_used, cost_usd, date, hour
-                ) VALUES (
-                    :api_key_id, :endpoint, 1, :tokens_used, :cost_usd, CURRENT_DATE, EXTRACT(HOUR FROM CURRENT_TIMESTAMP)
-                )
-                ON CONFLICT (api_key_id, endpoint, date, hour)
-                DO UPDATE SET
-                    requests_count = rampart_api_key_usage.requests_count + 1,
-                    tokens_used = rampart_api_key_usage.tokens_used + :tokens_used,
-                    cost_usd = rampart_api_key_usage.cost_usd + :cost_usd
-            """),
-            {
-                "api_key_id": api_key_id,
-                "endpoint": endpoint,
-                "tokens_used": tokens_used,
-                "cost_usd": cost_usd
-            }
-        )
+        # Check if we're using SQLite or PostgreSQL
+        is_sqlite = "sqlite" in DATABASE_URL.lower()
+        
+        if is_sqlite:
+            # SQLite version - use INSERT OR REPLACE
+            conn.execute(
+                text("""
+                    INSERT OR REPLACE INTO rampart_api_key_usage (
+                        api_key_id, endpoint, requests_count, tokens_used, cost_usd, date, hour
+                    ) VALUES (
+                        :api_key_id, :endpoint, 
+                        COALESCE((SELECT requests_count FROM rampart_api_key_usage 
+                                 WHERE api_key_id = :api_key_id AND endpoint = :endpoint 
+                                 AND date = date('now') AND hour = cast(strftime('%H', 'now') as integer)), 0) + 1,
+                        COALESCE((SELECT tokens_used FROM rampart_api_key_usage 
+                                 WHERE api_key_id = :api_key_id AND endpoint = :endpoint 
+                                 AND date = date('now') AND hour = cast(strftime('%H', 'now') as integer)), 0) + :tokens_used,
+                        COALESCE((SELECT cost_usd FROM rampart_api_key_usage 
+                                 WHERE api_key_id = :api_key_id AND endpoint = :endpoint 
+                                 AND date = date('now') AND hour = cast(strftime('%H', 'now') as integer)), 0) + :cost_usd,
+                        date('now'), 
+                        cast(strftime('%H', 'now') as integer)
+                    )
+                """),
+                {
+                    "api_key_id": str(api_key_id),
+                    "endpoint": endpoint,
+                    "tokens_used": tokens_used,
+                    "cost_usd": cost_usd
+                }
+            )
+        else:
+            # PostgreSQL version
+            conn.execute(
+                text("""
+                    INSERT INTO rampart_api_key_usage (
+                        api_key_id, endpoint, requests_count, tokens_used, cost_usd, date, hour
+                    ) VALUES (
+                        :api_key_id, :endpoint, 1, :tokens_used, :cost_usd, CURRENT_DATE, EXTRACT(HOUR FROM CURRENT_TIMESTAMP)
+                    )
+                    ON CONFLICT (api_key_id, endpoint, date, hour)
+                    DO UPDATE SET
+                        requests_count = rampart_api_key_usage.requests_count + 1,
+                        tokens_used = rampart_api_key_usage.tokens_used + :tokens_used,
+                        cost_usd = rampart_api_key_usage.cost_usd + :cost_usd
+                """),
+                {
+                    "api_key_id": api_key_id,
+                    "endpoint": endpoint,
+                    "tokens_used": tokens_used,
+                    "cost_usd": cost_usd
+                }
+            )
         conn.commit()

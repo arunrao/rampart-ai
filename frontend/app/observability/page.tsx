@@ -53,15 +53,15 @@ function ObservabilityPageContent() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Traces</CardTitle>
+              <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatNumber(analytics?.total_traces || 0)}
+                {formatNumber(analytics?.total_requests || 0)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {formatNumber(analytics?.total_spans || 0)} spans
+                {formatNumber(analytics?.jwt_requests || 0)} traces, {formatNumber(analytics?.api_key_requests || 0)} API calls
               </p>
             </CardContent>
           </Card>
@@ -109,9 +109,9 @@ function ObservabilityPageContent() {
         {/* Traces List */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Traces</CardTitle>
+            <CardTitle>Recent Traces (JWT Activity)</CardTitle>
             <CardDescription>
-              {traces?.length || 0} LLM API calls tracked
+              {traces?.length || 0} dashboard LLM traces recorded. API key requests are tracked separately.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -159,9 +159,12 @@ function ObservabilityPageContent() {
             ) : (
               <div className="text-center py-12">
                 <Activity className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">No traces recorded yet</p>
+                <p className="text-gray-600">No JWT traces recorded yet</p>
                 <p className="text-sm text-muted-foreground">
-                  Start making LLM API calls to see traces here
+                  Traces are created by JWT-authenticated dashboard activity.
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  API key requests ({formatNumber(analytics?.api_key_requests || 0)}) are tracked in usage stats.
                 </p>
               </div>
             )}

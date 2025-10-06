@@ -71,6 +71,16 @@ function PoliciesPageContent() {
       </header>
 
       <main className="container mx-auto px-6 py-8">
+        {/* Info Banner */}
+        <Card className="mb-6 border-blue-200 bg-blue-50">
+          <CardContent className="pt-6">
+            <p className="text-sm text-blue-900">
+              📋 <strong>Note:</strong> Policy management is currently under development. 
+              These settings will apply to both JWT and API key authenticated requests once implemented.
+            </p>
+          </CardContent>
+        </Card>
+
         {/* Compliance Templates */}
         <Card className="mb-8">
           <CardHeader>

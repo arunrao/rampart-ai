@@ -37,9 +37,9 @@ function HomePageContent() {
 
   const stats = [
     {
-      title: "Total Traces",
-      value: formatNumber(analyticsData?.total_traces || 0),
-      description: "LLM API calls tracked",
+      title: "Total Requests",
+      value: formatNumber(analyticsData?.total_requests || 0),
+      description: `${analyticsData?.total_traces || 0} traces, ${analyticsData?.api_key_requests || 0} API calls`,
       icon: Activity,
       href: "/observability",
     },
@@ -130,7 +130,7 @@ function HomePageContent() {
                 {analyticsData?.average_latency_ms?.toFixed(0) || 0}ms
               </div>
               <p className="text-sm text-muted-foreground mt-2">
-                Across {formatNumber(analyticsData?.total_spans || 0)} operations
+                Across {formatNumber(analyticsData?.total_requests || 0)} operations
               </p>
             </CardContent>
           </Card>

@@ -49,6 +49,18 @@ function SecurityPageContent() {
       </header>
 
       <main className="container mx-auto px-6 py-8">
+        {/* Info Banner */}
+        <Card className="mb-6 border-blue-200 bg-blue-50">
+          <CardContent className="pt-6">
+            <p className="text-sm text-blue-900">
+              📊 <strong>Note:</strong> This page shows JWT-authenticated security analyses only. 
+              API key usage is tracked separately. Check the{" "}
+              <Link href="/api-keys" className="underline font-semibold">API Keys page</Link>{" "}
+              for detailed usage statistics.
+            </p>
+          </CardContent>
+        </Card>
+
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
@@ -88,6 +100,7 @@ function SecurityPageContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats?.total_analyses || 0}</div>
+              <p className="text-xs text-muted-foreground mt-1">JWT traces only</p>
             </CardContent>
           </Card>
         </div>
