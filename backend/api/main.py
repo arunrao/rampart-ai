@@ -112,6 +112,18 @@ app.add_middleware(SecurityHeadersMiddleware)
 # 4. CORS middleware
 # Parse comma-separated origins from config
 cors_origins = [origin.strip() for origin in settings.cors_origins.split(",")]
+
+# For development, allow common local origins
+if settings.debug:
+    dev_origins = [
+        "http://localhost:8080",  # Demo server
+        "http://localhost:8081",  # Demo server (alternative port)
+        "http://127.0.0.1:8080",  # Alternative localhost
+        "http://127.0.0.1:8081",  # Alternative localhost
+        "file://",  # Local files (though this might not work)
+    ]
+    cors_origins.extend(dev_origins)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

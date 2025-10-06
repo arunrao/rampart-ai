@@ -77,7 +77,12 @@ node demo_app.js
 
 ### Web Demo Setup
 ```bash
-# Simply open in browser - no setup required
+# Option 1: Serve via HTTP (Recommended - avoids CORS issues)
+cd demo
+python3 serve_demo.py
+# Opens automatically at http://localhost:8081/web_demo.html
+
+# Option 2: Open directly in browser (may have CORS issues)
 open web_demo.html
 ```
 
@@ -228,7 +233,9 @@ Error: Network error: connect ECONNREFUSED
 ```
 Error: Access to fetch blocked by CORS policy
 ```
-- Solution: Backend CORS is configured for localhost:3000, use local file or serve via HTTP
+- Solution: Use the HTTP server instead of opening file directly
+- Run: `python3 serve_demo.py` in the demo directory
+- Backend CORS is configured for localhost:8081 in development mode
 
 **4. Rate Limit Exceeded**
 ```
