@@ -221,17 +221,66 @@ async def get_trace_spans(
 
 @router.get("/analytics/summary")
 async def get_analytics_summary(current_user: TokenData = Depends(get_current_user)):
-    """Get analytics summary"""
+    """Get comprehensive analytics summary including both JWT and API key activity"""
+    from api.db import get_conn
+    from sqlalchemy import text
+    
+    # Get trace-based analytics (JWT activity)
     total_traces = len(traces_db)
     total_spans = len(spans_db)
-    total_tokens = sum(t.total_tokens for t in traces_db.values())
-    total_cost = sum(t.total_cost for t in traces_db.values())
+    trace_tokens = sum(t.total_tokens for t in traces_db.values())
+    trace_cost = sum(t.total_cost for t in traces_db.values())
     avg_latency = sum(t.total_latency_ms for t in traces_db.values()) / max(total_traces, 1)
     
+    # Get API key usage analytics (includes web demo and application usage)
+    api_key_requests = 0
+    api_key_tokens = 0
+    api_key_cost = 0.0
+    
+    try:
+        with get_conn() as conn:
+            # Get all API keys for this user
+            api_keys_result = conn.execute(
+                text("""
+                    SELECT total_requests, tokens_used, cost_usd 
+                    FROM rampart_api_keys 
+                    WHERE user_id = :user_id AND is_active = true
+                """),
+                {"user_id": current_user.user_id}
+            ).fetchall()
+            
+            for key_stats in api_keys_result:
+                api_key_requests += key_stats[0] or 0
+                api_key_tokens += key_stats[1] or 0
+                api_key_cost += key_stats[2] or 0.0
+    except Exception:
+        # If database query fails, continue with trace data only
+        pass
+    
+    # Aggregate totals
+    total_requests = total_traces + api_key_requests
+    total_tokens = trace_tokens + api_key_tokens
+    total_cost = trace_cost + api_key_cost
+    
     return {
+        "total_requests": total_requests,
         "total_traces": total_traces,
         "total_spans": total_spans,
         "total_tokens": total_tokens,
         "total_cost": round(total_cost, 4),
-        "average_latency_ms": round(avg_latency, 2)
+        "average_latency_ms": round(avg_latency, 2),
+        "api_key_requests": api_key_requests,
+        "jwt_requests": total_traces,
+        "breakdown": {
+            "dashboard_activity": {
+                "requests": total_traces,
+                "tokens": trace_tokens,
+                "cost": round(trace_cost, 4)
+            },
+            "api_key_activity": {
+                "requests": api_key_requests,
+                "tokens": api_key_tokens,
+                "cost": round(api_key_cost, 4)
+            }
+        }
     }
