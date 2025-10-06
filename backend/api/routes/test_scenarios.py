@@ -327,7 +327,7 @@ async def run_test_scenarios(
                     context_type=scenario.context_type,
                     metadata={"test_scenario": scenario.id}
                 )
-                analysis_response = await analyze_security(analysis_request, current_user)
+                analysis_response = await analyze_security(analysis_request, (current_user, None))
                 
                 # Check if result matches expectations
                 detected_threats = [t.threat_type.value for t in analysis_response.threats_detected]
@@ -366,7 +366,7 @@ async def run_test_scenarios(
                     check_pii=True,
                     check_toxicity=False
                 )
-                filter_response = await filter_content(filter_request, current_user)
+                filter_response = await filter_content(filter_request, (current_user, None))
                 
                 # Check if PII was detected
                 pii_detected = len(filter_response.pii_detected) > 0
@@ -395,7 +395,7 @@ async def run_test_scenarios(
                     context_type=scenario.context_type,
                     metadata={"test_scenario": scenario.id}
                 )
-                analysis_response = await analyze_security(analysis_request, current_user)
+                analysis_response = await analyze_security(analysis_request, (current_user, None))
                 
                 # Should have no threats
                 passed = analysis_response.is_safe and len(analysis_response.threats_detected) == 0
