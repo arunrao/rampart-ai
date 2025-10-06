@@ -108,22 +108,6 @@ Detects 12+ attack patterns using regex-based detection with severity scoring:
 Scans LLM outputs for sensitive data leakage and exfiltration attempts:
 
 **Sensitive Data Detected:**
-- **Credentials**: API keys (sk-*, pk-*), passwords, JWT tokens, private keys
-- **Infrastructure**: Database URLs, connection strings, internal IP addresses
-- **PII**: Email addresses, phone numbers, SSNs (via content filter integration)
-- **Exfiltration Methods**: URLs with suspicious parameters, email commands, webhook calls, curl/fetch requests
-
-**Detection Method:**
-- Regex pattern matching for credentials and infrastructure details
-- URL analysis with parameter inspection
-- Trusted domain whitelisting
-- Risk scoring based on multiple factors
-- Automatic redaction capabilities
-
-**Recommendations:**
-- BLOCK: Critical credentials detected (API keys, passwords)
-- REDACT: PII or sensitive data that can be masked
-- FLAG: Suspicious patterns requiring review
 - ALLOW: No significant risk
 
 ### 3. Content Filtering Layer
@@ -568,20 +552,18 @@ export POSTGRES_PASSWORD=$(python -c "import secrets; print(secrets.token_urlsaf
 
 # Copy and configure environment
 cp .env.example .env
-# Edit .env with your secrets and API keys
+## Quick Start
 
-# Start all services
+### Local Development (Recommended for Testing)
+```bash
+# Start all services with Docker
 docker-compose up -d
 
-# Access
-# Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
-# Frontend: http://localhost:3000
-```
+# Test authentication system
+./test_authentication.sh
 
-**Manual Setup:**
-```bash
-# Backend
+# Access the application
+open http://localhost:3000
 cd backend
 python -m venv venv
 source venv/bin/activate
@@ -1368,13 +1350,31 @@ Below is a concise, standards-aligned comparison of Rampart with adjacent offeri
 - **How they work together**
   - Use Rampart as the in-product security gateway; export selected traces/metrics to Langfuse for analytics if desired.
 
-## Documentation
+## 📚 Documentation
 
-- **[SETUP_SECURE.md](SETUP_SECURE.md)**: Production deployment guide
-- **[SECURITY_FIXES.md](SECURITY_FIXES.md)**: Security hardening changelog
-- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Technical architecture details
-- **[SECURITY.md](SECURITY.md)**: Security policy and best practices
-- **[TESTING_GUIDE.md](TESTING_GUIDE.md)**: Testing procedures
+### Getting Started
+- **[Quick Start Guide](docs/QUICK_START.md)** - Get running in 5 minutes
+- **[Developer Integration](docs/DEVELOPER_INTEGRATION.md)** - Complete integration guide
+- **[Docker Setup](docs/DOCKER_SETUP.md)** - Local development setup
+
+### API & Features  
+- **[API Reference](docs/API_REFERENCE.md)** - Complete REST API documentation
+- **[Security Features](docs/SECURITY_FEATURES.md)** - Detailed security capabilities
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design and components
+
+### Deployment & Operations
+- **[Production Deployment](docs/PRODUCTION_DEPLOYMENT.md)** - Production setup guide
+- **[Cloud Deployment](infrastructure/README.md)** - AWS/GCP deployment options
+- **[Monitoring & Observability](docs/OBSERVABILITY.md)** - Tracing and metrics
+
+### Development
+- **[Contributing Guide](docs/CONTRIBUTING.md)** - Development guidelines
+- **[Testing Guide](docs/TESTING_GUIDE.md)** - How to test security features
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+**📖 Full documentation index: [docs/README.md](docs/README.md)**
+
+### Interactive Documentation
 - **[API Docs](http://localhost:8000/docs)**: Interactive OpenAPI documentation (when running)
 
 ## Research & References

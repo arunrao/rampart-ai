@@ -1,0 +1,427 @@
+# Kubernetes deployment for Project Rampart
+# Works with EKS, GKE, AKS, or any Kubernetes cluster
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rampart
+  labels:
+    name: rampart
+    environment: production
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rampart-secrets
+  namespace: rampart
+type: Opaque
+stringData:
+  # Replace these with actual values or use external secrets operator
+  secret-key: "REPLACE_WITH_ACTUAL_SECRET"
+  jwt-secret-key: "REPLACE_WITH_ACTUAL_JWT_SECRET"
+  key-encryption-secret: "REPLACE_WITH_ACTUAL_ENCRYPTION_SECRET"
+  database-url: "postgresql://user:password@postgres-service:5432/rampart"
+  redis-url: "redis://redis-service:6379/0"
+  openai-api-key: ""
+  anthropic-api-key: ""
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rampart-config
+  namespace: rampart
+data:
+  ENVIRONMENT: "production"
+  DEBUG: "false"
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  CORS_ORIGINS: "https://your-frontend.com"
+  RATE_LIMIT_PER_MINUTE: "60"
+  RATE_LIMIT_PER_HOUR: "1000"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rampart-backend
+  namespace: rampart
+  labels:
+    app: rampart-backend
+    tier: backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: rampart-backend
+  template:
+    metadata:
+      labels:
+        app: rampart-backend
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: rampart-backend-sa
+      
+      # Init container to wait for database
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.36
+        command: ['sh', '-c', 'until nc -z postgres-service 5432; do echo waiting for postgres; sleep 2; done;']
+      
+      containers:
+      - name: api
+        image: rampart-backend:latest  # Replace with your image
+        imagePullPolicy: Always
+        
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        
+        envFrom:
+        - configMapRef:
+            name: rampart-config
+        
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: redis-url
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: secret-key
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: jwt-secret-key
+        - name: KEY_ENCRYPTION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: key-encryption-secret
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: openai-api-key
+              optional: true
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: anthropic-api-key
+              optional: true
+        
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rampart-backend-service
+  namespace: rampart
+  labels:
+    app: rampart-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: rampart-backend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  sessionAffinity: None
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rampart-backend-sa
+  namespace: rampart
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rampart-backend-hpa
+  namespace: rampart
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rampart-backend
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rampart-ingress
+  namespace: rampart
+  annotations:
+    # For NGINX Ingress Controller
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # For cert-manager (automatic HTTPS)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    
+    # CORS
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://your-frontend.com"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - api.rampart.yourcompany.com
+    secretName: rampart-tls-secret
+  rules:
+  - host: api.rampart.yourcompany.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rampart-backend-service
+            port:
+              number: 80
+
+---
+# PodDisruptionBudget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rampart-backend-pdb
+  namespace: rampart
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: rampart-backend
+
+---
+# NetworkPolicy for security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rampart-backend-netpol
+  namespace: rampart
+spec:
+  podSelector:
+    matchLabels:
+      app: rampart-backend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow PostgreSQL
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow Redis
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow external HTTPS (for LLM APIs)
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443
+
+---
+# Optional: Celery Worker Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rampart-worker
+  namespace: rampart
+  labels:
+    app: rampart-worker
+    tier: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rampart-worker
+  template:
+    metadata:
+      labels:
+        app: rampart-worker
+        tier: worker
+    spec:
+      serviceAccountName: rampart-backend-sa
+      
+      containers:
+      - name: worker
+        image: rampart-backend:latest
+        command: ["celery", "-A", "api.celery_app", "worker", "--loglevel=info"]
+        
+        envFrom:
+        - configMapRef:
+            name: rampart-config
+        
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: rampart-secrets
+              key: redis-url
+        
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+
+---
+# Optional: HPA for workers
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rampart-worker-hpa
+  namespace: rampart
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rampart-worker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

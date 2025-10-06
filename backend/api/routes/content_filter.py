@@ -12,6 +12,8 @@ from enum import Enum
 import re
 
 from api.routes.auth import get_current_user, TokenData
+from api.routes.security import get_authenticated_user
+from api.routes.rampart_keys import track_api_key_usage
 
 router = APIRouter()
 
@@ -389,7 +391,7 @@ def detect_pii_presidio(content: str) -> Tuple[List[PIIEntity], Optional[str]]:
 @router.post("/filter", response_model=ContentFilterResponse)
 async def filter_content(
     request: ContentFilterRequest,
-    current_user: TokenData = Depends(get_current_user)
+    auth_data: tuple[TokenData, Optional[UUID]] = Depends(get_authenticated_user)
 ):
     """Filter content for PII, toxicity, and other issues"""
     import time
@@ -515,6 +517,12 @@ async def filter_content(
         )
 
         filter_results[result_id] = response
+        
+        # Track API key usage if authenticated via API key
+        current_user, api_key_id = auth_data
+        if api_key_id:
+            track_api_key_usage(api_key_id, "/filter", tokens_used=0, cost_usd=0.0)
+        
         return response
 
 

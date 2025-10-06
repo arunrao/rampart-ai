@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
+import { fetchJSON } from "@/utils/api";
 
 interface ProviderKey {
   id: string;
@@ -63,12 +64,12 @@ function SettingsPageContent() {
 
     try {
       // Load providers
-      const providersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/providers/supported`);
+      const providersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api-keys/providers`);
       const providersData = await providersRes.json();
-      setProviders(providersData.providers);
+      setProviders(providersData);
 
       // Load user's keys
-      const keysRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/providers/keys`, {
+      const keysRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api-keys/keys`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -80,7 +81,17 @@ function SettingsPageContent() {
       }
 
       const keysData = await keysRes.json();
-      setKeys(keysData.keys);
+      // Transform to match expected format
+      const transformedKeys = keysData.map((key: any) => ({
+        id: key.id,
+        provider: key.provider,
+        masked_key: key.key_preview,
+        last_4: key.key_preview.slice(-4),
+        status: key.is_valid ? 'active' : 'inactive',
+        created_at: key.created_at,
+        updated_at: key.updated_at
+      }));
+      setKeys(transformedKeys);
     } catch (err: any) {
       setError("Failed to load settings");
     } finally {
@@ -106,14 +117,18 @@ function SettingsPageContent() {
     try {
       const token = getAuthToken();
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/providers/keys/${selectedProvider.id}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api-keys/keys`,
         {
-          method: "PUT",
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ api_key: apiKey }),
+          body: JSON.stringify({ 
+            provider: selectedProvider.id,
+            api_key: apiKey,
+            name: selectedProvider.name
+          }),
         }
       );
 
@@ -133,15 +148,15 @@ function SettingsPageContent() {
     }
   };
 
-  const handleDeleteKey = async (provider: string) => {
-    if (!confirm(`Are you sure you want to delete your ${provider} API key?`)) {
+  const handleDeleteKey = async (keyId: string, providerName: string) => {
+    if (!confirm(`Are you sure you want to delete your ${providerName} API key?`)) {
       return;
     }
 
     try {
       const token = getAuthToken();
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/providers/keys/${provider}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api-keys/keys/${keyId}`,
         {
           method: "DELETE",
           headers: {
@@ -251,7 +266,7 @@ function SettingsPageContent() {
                           Update
                         </button>
                         <button
-                          onClick={() => handleDeleteKey(provider.id)}
+                          onClick={() => handleDeleteKey(existingKey.id, provider.name)}
                           className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm"
                         >
                           Delete

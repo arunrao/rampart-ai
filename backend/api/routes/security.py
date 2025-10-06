@@ -9,8 +9,30 @@ from uuid import UUID, uuid4
 from enum import Enum
 
 from api.routes.auth import get_current_user, TokenData
+from api.routes.rampart_keys import get_current_user_from_api_key, track_api_key_usage
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 router = APIRouter()
+security = HTTPBearer()
+
+
+# Dual authentication dependency - supports both JWT and API key
+async def get_authenticated_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> tuple[TokenData, Optional[UUID]]:
+    """
+    Authenticate user via either JWT token (dashboard) or API key (application).
+    Returns (user_data, api_key_id) - api_key_id is None for JWT auth.
+    """
+    token = credentials.credentials
+    
+    # Try API key authentication first (starts with 'rmp_')
+    if token.startswith('rmp_'):
+        user_data, api_key_id = await get_current_user_from_api_key(token)
+        return user_data, api_key_id
+    
+    # Fall back to JWT authentication
+    from api.routes.auth import decode_access_token
+    user_data = decode_access_token(token)
+    return user_data, None
 
 
 class ThreatType(str, Enum):
@@ -91,15 +113,20 @@ def analyze_prompt_injection(content: str) -> Optional[ThreatDetection]:
         "override",
         "forget everything",
         "you are now",
-        "act as if"
+        "act as if",
+        "system prompt",
+        "original instructions",
+        "admin mode",
+        "developer mode"
     ]
     
     content_lower = content.lower()
     detected_patterns = [p for p in injection_patterns if p in content_lower]
     
     if detected_patterns:
-        confidence = min(len(detected_patterns) * 0.3, 1.0)
-        severity = SeverityLevel.HIGH if confidence > 0.7 else SeverityLevel.MEDIUM
+        # Higher confidence scoring - each pattern adds 0.5
+        confidence = min(len(detected_patterns) * 0.5, 1.0)
+        severity = SeverityLevel.HIGH if confidence >= 0.5 else SeverityLevel.MEDIUM
         
         return ThreatDetection(
             threat_type=ThreatType.PROMPT_INJECTION,
@@ -117,7 +144,9 @@ def analyze_data_exfiltration(content: str) -> Optional[ThreatDetection]:
     # Check for suspicious patterns
     exfiltration_patterns = [
         "send to",
-        "email this to",
+        "send this",
+        "email this",
+        "email to",
         "post to",
         "upload to",
         "save to url",
@@ -132,8 +161,9 @@ def analyze_data_exfiltration(content: str) -> Optional[ThreatDetection]:
     detected_patterns = [p for p in exfiltration_patterns if p in content_lower]
     
     if detected_patterns:
-        confidence = min(len(detected_patterns) * 0.25, 1.0)
-        severity = SeverityLevel.CRITICAL if confidence > 0.7 else SeverityLevel.HIGH
+        # Each pattern adds 0.5 - single strong pattern is enough to block
+        confidence = min(len(detected_patterns) * 0.5, 1.0)
+        severity = SeverityLevel.CRITICAL if confidence >= 0.7 else SeverityLevel.HIGH
         
         return ThreatDetection(
             threat_type=ThreatType.DATA_EXFILTRATION,
@@ -163,7 +193,8 @@ def analyze_jailbreak(content: str) -> Optional[ThreatDetection]:
     detected_patterns = [p for p in jailbreak_patterns if p in content_lower]
     
     if detected_patterns:
-        confidence = min(len(detected_patterns) * 0.35, 1.0)
+        # Higher confidence - each pattern adds 0.5
+        confidence = min(len(detected_patterns) * 0.5, 1.0)
         severity = SeverityLevel.HIGH
         
         return ThreatDetection(
@@ -180,7 +211,7 @@ def analyze_jailbreak(content: str) -> Optional[ThreatDetection]:
 @router.post("/analyze", response_model=SecurityAnalysisResponse)
 async def analyze_security(
     request: SecurityAnalysisRequest,
-    current_user: TokenData = Depends(get_current_user)
+    auth_data: tuple[TokenData, Optional[UUID]] = Depends(get_authenticated_user)
 ):
     """Analyze content for security threats"""
     import time
@@ -214,6 +245,7 @@ async def analyze_security(
         risk_score = max(t.confidence for t in threats)
     
     is_safe = risk_score < 0.5
+    should_block = risk_score >= 0.5  # Block if risk score is 0.5 or higher
     
     processing_time = (time.time() - start_time) * 1000
     
@@ -231,6 +263,11 @@ async def analyze_security(
     
     security_analyses[analysis_id] = response
     
+    # Track API key usage if authenticated via API key
+    current_user, api_key_id = auth_data
+    if api_key_id:
+        track_api_key_usage(api_key_id, "/security/analyze", tokens_used=0, cost_usd=0.0)
+    
     # Create incident if high risk
     if risk_score >= 0.7 and threats:
         incident_id = uuid4()
@@ -240,7 +277,7 @@ async def analyze_security(
             severity=threats[0].severity,
             content_preview=request.content[:200],
             trace_id=request.trace_id,
-            user_id=request.metadata.get("user_id") if request.metadata else None,
+            user_id=str(current_user.user_id),
             detected_at=datetime.utcnow(),
             status="open",
             metadata=request.metadata

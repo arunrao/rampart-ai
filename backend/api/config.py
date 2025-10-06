@@ -56,8 +56,8 @@ class Settings(BaseSettings):
     enable_auto_remediation: bool = False
     
     # Rate Limiting
-    rate_limit_per_minute: int = 60
-    rate_limit_per_hour: int = 1000
+    rate_limit_per_minute: int = 1000
+    rate_limit_per_hour: int = 10000
     
     # CORS Configuration
     cors_origins: str = "http://localhost:3000,http://localhost:3001"

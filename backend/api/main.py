@@ -9,8 +9,8 @@ import time
 import logging
 
 from api.config import get_settings
-from api.routes import health, traces, security, policies, content_filter
-from api.db import init_defaults_table
+from api.routes import health, auth, providers, traces, security, policies, content_filter, test_scenarios, api_keys, rampart_keys
+from api.db import init_defaults_table, init_all_tables
 from api.middleware import (
     SecurityHeadersMiddleware,
     RateLimitMiddleware,
@@ -21,6 +21,7 @@ from api.middleware import (
 try:
     from opentelemetry import trace as otel_trace
     from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -155,9 +156,12 @@ app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])
 app.include_router(auth.router, prefix=settings.api_prefix, tags=["auth"])
 app.include_router(providers.router, prefix=settings.api_prefix, tags=["providers"])
 app.include_router(traces.router, prefix=settings.api_prefix, tags=["observability"])
-app.include_router(security.router, prefix=settings.api_prefix, tags=["security"])
+app.include_router(security.router, prefix=f"{settings.api_prefix}/security", tags=["security"])
 app.include_router(policies.router, prefix=settings.api_prefix, tags=["policies"])
 app.include_router(content_filter.router, prefix=settings.api_prefix, tags=["content-filter"])
+app.include_router(test_scenarios.router, prefix=f"{settings.api_prefix}/test", tags=["testing"])
+app.include_router(api_keys.router, prefix=f"{settings.api_prefix}/api-keys", tags=["api-keys"])
+app.include_router(rampart_keys.router, prefix=settings.api_prefix, tags=["rampart-keys"])
 
 
 # Prometheus metrics endpoint

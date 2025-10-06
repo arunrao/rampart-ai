@@ -12,12 +12,72 @@ from api.routes.auth import get_current_user, TokenData
 router = APIRouter()
 
 
+class Trace(BaseModel):
+    """Trace model"""
+    id: UUID
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
+    name: str
+    created_at: datetime
+    updated_at: datetime
+    status: str
+    total_tokens: int = 0
+    total_cost: float = 0.0
+    total_latency_ms: float = 0.0
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class TraceCreate(BaseModel):
     """Create a new trace"""
     session_id: Optional[str] = None
     user_id: Optional[str] = None
     name: str
     metadata: Optional[Dict[str, Any]] = None
+
+
+class Span(BaseModel):
+    """Span model"""
+    id: UUID
+    trace_id: UUID
+    parent_span_id: Optional[UUID] = None
+    name: str
+    span_type: str
+    input_data: Optional[Dict[str, Any]] = None
+    output_data: Optional[Dict[str, Any]] = None
+    tokens_used: Optional[int] = None
+    cost: Optional[float] = None
+    latency_ms: Optional[float] = None
+    status: str
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class SpanCreate(BaseModel):
+    """Create a new span"""
+    trace_id: UUID
+    parent_span_id: Optional[UUID] = None
+    name: str
+    span_type: str
+    input_data: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class SpanUpdate(BaseModel):
+    """Update a span"""
+    output_data: Optional[Dict[str, Any]] = None
+    tokens_used: Optional[int] = None
+    cost: Optional[float] = None
+    latency_ms: Optional[float] = None
+    status: str = "completed"
+    error_message: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+# In-memory storage
+traces_db: Dict[UUID, Trace] = {}
+spans_db: Dict[UUID, Span] = {}
 
 
 @router.post("/traces", response_model=Trace, status_code=201)

@@ -20,6 +20,8 @@ export default function Navigation() {
     { href: "/security", label: "Security" },
     { href: "/policies", label: "Policies" },
     { href: "/content-filter", label: "Content Filter" },
+    { href: "/api-keys", label: "API Keys" },
+    { href: "/testing", label: "Testing" },
   ];
 
   return (
