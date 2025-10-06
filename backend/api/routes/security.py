@@ -337,8 +337,12 @@ async def update_incident_status(
 
 @router.get("/stats")
 async def get_security_stats(current_user: TokenData = Depends(get_current_user)):
-    """Get security statistics"""
-    total_analyses = len(security_analyses)
+    """Get security statistics including both JWT traces and API key usage"""
+    from api.db import get_conn
+    from sqlalchemy import text
+    
+    # JWT trace data (in-memory)
+    jwt_analyses = len(security_analyses)
     total_incidents = len(security_incidents)
     
     threat_counts = {}
@@ -348,13 +352,67 @@ async def get_security_stats(current_user: TokenData = Depends(get_current_user)
     
     open_incidents = len([i for i in security_incidents.values() if i.status == "open"])
     
+    jwt_risk_score = round(
+        sum(a.risk_score for a in security_analyses.values()) / max(jwt_analyses, 1),
+        3
+    ) if jwt_analyses > 0 else 0
+    
+    # API key usage data (from database)
+    api_key_analyses = 0
+    api_key_breakdown = []
+    
+    try:
+        with get_conn() as conn:
+            # Get total API key security analyses
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        COALESCE(SUM(u.requests_count), 0) as total_requests
+                    FROM rampart_api_keys k
+                    LEFT JOIN rampart_api_key_usage u ON k.id = u.api_key_id
+                    WHERE k.user_id = :user_id 
+                    AND k.is_active = true
+                    AND u.endpoint = '/security/analyze'
+                """),
+                {"user_id": current_user.user_id}
+            ).fetchone()
+            
+            api_key_analyses = result[0] if result else 0
+            
+            # Get breakdown by API key
+            breakdown_result = conn.execute(
+                text("""
+                    SELECT 
+                        k.key_name,
+                        k.key_preview,
+                        COALESCE(SUM(u.requests_count), 0) as requests
+                    FROM rampart_api_keys k
+                    LEFT JOIN rampart_api_key_usage u ON k.id = u.api_key_id AND u.endpoint = '/security/analyze'
+                    WHERE k.user_id = :user_id AND k.is_active = true
+                    GROUP BY k.id, k.key_name, k.key_preview
+                    HAVING COALESCE(SUM(u.requests_count), 0) > 0
+                    ORDER BY requests DESC
+                """),
+                {"user_id": current_user.user_id}
+            ).fetchall()
+            
+            api_key_breakdown = [
+                {"key_name": row[0], "key_preview": row[1], "requests": row[2]}
+                for row in breakdown_result
+            ]
+    except Exception as e:
+        print(f"Error fetching API key security stats: {e}")
+        pass
+    
+    total_analyses = jwt_analyses + api_key_analyses
+    
     return {
         "total_analyses": total_analyses,
+        "jwt_analyses": jwt_analyses,
+        "api_key_analyses": api_key_analyses,
+        "api_key_breakdown": api_key_breakdown,
         "total_incidents": total_incidents,
         "open_incidents": open_incidents,
         "threat_distribution": threat_counts,
-        "average_risk_score": round(
-            sum(a.risk_score for a in security_analyses.values()) / max(total_analyses, 1),
-            3
-        )
+        "average_risk_score": jwt_risk_score
     }

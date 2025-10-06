@@ -572,8 +572,12 @@ async def get_filter_result(
 
 @router.get("/filter/stats")
 async def get_filter_stats(current_user: TokenData = Depends(get_current_user)):
-    """Get content filtering statistics"""
-    total_filtered = len(filter_results)
+    """Get content filtering statistics including both JWT traces and API key usage"""
+    from api.db import get_conn
+    from sqlalchemy import text
+    
+    # JWT trace data (in-memory)
+    jwt_filtered = len(filter_results)
     
     total_pii = sum(len(r.pii_detected) for r in filter_results.values())
     unsafe_count = sum(1 for r in filter_results.values() if not r.is_safe)
@@ -589,8 +593,60 @@ async def get_filter_stats(current_user: TokenData = Depends(get_current_user)):
     if toxicity_results:
         avg_toxicity = sum(r.toxicity_scores.toxicity for r in toxicity_results) / len(toxicity_results)
     
+    # API key usage data (from database)
+    api_key_filtered = 0
+    api_key_breakdown = []
+    
+    try:
+        with get_conn() as conn:
+            # Get total API key filter requests
+            result = conn.execute(
+                text("""
+                    SELECT 
+                        COALESCE(SUM(u.requests_count), 0) as total_requests
+                    FROM rampart_api_keys k
+                    LEFT JOIN rampart_api_key_usage u ON k.id = u.api_key_id
+                    WHERE k.user_id = :user_id 
+                    AND k.is_active = true
+                    AND u.endpoint = '/filter'
+                """),
+                {"user_id": current_user.user_id}
+            ).fetchone()
+            
+            api_key_filtered = result[0] if result else 0
+            
+            # Get breakdown by API key
+            breakdown_result = conn.execute(
+                text("""
+                    SELECT 
+                        k.key_name,
+                        k.key_preview,
+                        COALESCE(SUM(u.requests_count), 0) as requests
+                    FROM rampart_api_keys k
+                    LEFT JOIN rampart_api_key_usage u ON k.id = u.api_key_id AND u.endpoint = '/filter'
+                    WHERE k.user_id = :user_id AND k.is_active = true
+                    GROUP BY k.id, k.key_name, k.key_preview
+                    HAVING COALESCE(SUM(u.requests_count), 0) > 0
+                    ORDER BY requests DESC
+                """),
+                {"user_id": current_user.user_id}
+            ).fetchall()
+            
+            api_key_breakdown = [
+                {"key_name": row[0], "key_preview": row[1], "requests": row[2]}
+                for row in breakdown_result
+            ]
+    except Exception as e:
+        print(f"Error fetching API key filter stats: {e}")
+        pass
+    
+    total_filtered = jwt_filtered + api_key_filtered
+    
     return {
         "total_filtered": total_filtered,
+        "jwt_filtered": jwt_filtered,
+        "api_key_filtered": api_key_filtered,
+        "api_key_breakdown": api_key_breakdown,
         "total_pii_detected": total_pii,
         "unsafe_content_count": unsafe_count,
         "pii_type_distribution": pii_type_counts,

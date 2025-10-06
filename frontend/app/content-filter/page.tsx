@@ -64,17 +64,6 @@ function ContentFilterPageContent() {
       </header>
 
       <main className="container mx-auto px-6 py-8">
-        {/* Info Banner */}
-        <Card className="mb-6 border-blue-200 bg-blue-50">
-          <CardContent className="pt-6">
-            <p className="text-sm text-blue-900">
-              📊 <strong>Note:</strong> This page shows JWT-authenticated content filtering only. 
-              API key usage is tracked separately. Check the{" "}
-              <Link href="/api-keys" className="underline font-semibold">API Keys page</Link>{" "}
-              for detailed usage statistics.
-            </p>
-          </CardContent>
-        </Card>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -85,7 +74,9 @@ function ContentFilterPageContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats?.total_filtered || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">JWT traces only</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {stats?.jwt_filtered || 0} JWT, {stats?.api_key_filtered || 0} API key
+              </p>
             </CardContent>
           </Card>
 
@@ -126,12 +117,47 @@ function ContentFilterPageContent() {
           </Card>
         </div>
 
+        {/* API Key Usage Breakdown */}
+        {stats?.api_key_breakdown && stats.api_key_breakdown.length > 0 && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>API Key Usage</CardTitle>
+              <CardDescription>Content filtering by API key</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {stats.api_key_breakdown.map((key: any) => (
+                  <div key={key.key_preview} className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">{key.key_name}</span>
+                      <span className="text-xs text-muted-foreground">{key.key_preview}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-32 bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-green-600 h-2 rounded-full"
+                          style={{
+                            width: `${(key.requests / (stats.api_key_filtered || 1)) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-sm text-muted-foreground w-12 text-right">
+                        {key.requests}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* PII Distribution */}
         {stats?.pii_type_distribution && Object.keys(stats.pii_type_distribution).length > 0 && (
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>PII Type Distribution</CardTitle>
-              <CardDescription>Types of PII detected</CardDescription>
+              <CardDescription>Types of PII detected (JWT traces only)</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
