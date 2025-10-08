@@ -231,8 +231,8 @@ function ContentFilterPageContent() {
                   </div>
 
                   {filterResult.pii_detected && filterResult.pii_detected.length > 0 && (
-                    <div className="border rounded-lg p-4 bg-orange-50">
-                      <h3 className="font-semibold mb-2 text-orange-900">
+                    <div className="border rounded-lg p-4 bg-orange-50 dark:bg-orange-950/30">
+                      <h3 className="font-semibold mb-2 text-orange-900 dark:text-orange-100">
                         PII Detected ({filterResult.pii_detected.length})
                       </h3>
                       <div className="space-y-2">
@@ -251,8 +251,8 @@ function ContentFilterPageContent() {
                   )}
 
                   {filterResult.toxicity_scores && (
-                    <div className="border rounded-lg p-4 bg-red-50">
-                      <h3 className="font-semibold mb-2 text-red-900">
+                    <div className="border rounded-lg p-4 bg-red-50 dark:bg-red-950/30">
+                      <h3 className="font-semibold mb-2 text-red-900 dark:text-red-100">
                         Toxicity Analysis
                       </h3>
                       <div className="grid grid-cols-2 gap-3 text-sm">
@@ -285,8 +285,8 @@ function ContentFilterPageContent() {
                   )}
 
                   {filterResult.filtered_content && (
-                    <div className="border rounded-lg p-4 bg-blue-50">
-                      <h3 className="font-semibold mb-2 text-blue-900">
+                    <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-950/30">
+                      <h3 className="font-semibold mb-2 text-blue-900 dark:text-blue-100">
                         Filtered Content
                       </h3>
                       <p className="text-sm">{filterResult.filtered_content}</p>
