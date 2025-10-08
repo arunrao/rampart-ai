@@ -95,13 +95,11 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NODE_ENV=production
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-    command: npm run dev
+    # Note: Removed volume mounts and dev command for production-optimized build
+    # For development, use: docker-compose -f docker-compose.dev.yml up
 
   # Jaeger all-in-one for tracing (UI at http://localhost:16686)
   jaeger:

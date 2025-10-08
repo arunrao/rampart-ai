@@ -74,13 +74,35 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
     
-    # Initialize services
-    # TODO: Initialize database connections, ML models, etc.
+    # Initialize database
     try:
         init_all_tables()
-        logger.info("Database tables initialized (users, provider_keys, policy_defaults)")
+        logger.info("✓ Database tables initialized (users, provider_keys, policy_defaults)")
     except Exception as e:
         logger.warning(f"Failed to init database tables: {e}")
+    
+    # Warmup ML models to eliminate cold start delay
+    logger.info("Warming up ML models...")
+    try:
+        # Warmup 1: DeBERTa hybrid prompt injection detector
+        from api.routes.security import get_detector
+        detector = get_detector()
+        # Force DeBERTa to load by using force_deberta=True
+        detector.detect("warmup test query", force_deberta=True)
+        logger.info("✓ DeBERTa prompt injection detector warmed up")
+    except Exception as e:
+        logger.warning(f"DeBERTa warmup failed: {e}")
+    
+    try:
+        # Warmup 2: GLiNER PII detector
+        from api.routes.content_filter import detect_pii
+        # Use longer text with varied PII to properly warmup GLiNER
+        detect_pii("Contact John Smith at john.smith@example.com or call 555-123-4567")
+        logger.info("✓ GLiNER PII detector warmed up")
+    except Exception as e:
+        logger.warning(f"GLiNER warmup failed: {e}")
+    
+    logger.info("✓ All ML models ready")
     
     yield
     

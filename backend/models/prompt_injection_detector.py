@@ -12,6 +12,11 @@ import re
 from dataclasses import dataclass
 import logging
 from functools import lru_cache
+import warnings
+
+# Suppress known PyTorch ONNX warnings (harmless compatibility issues)
+warnings.filterwarnings("ignore", message=".*scaled_dot_product_attention.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.onnx")
 
 logger = logging.getLogger(__name__)
 
@@ -367,11 +372,21 @@ class DeBERTaPromptInjectionDetector:
             if self.use_onnx:
                 try:
                     logger.info("Loading ONNX-optimized model...")
-                    model = ORTModelForSequenceClassification.from_pretrained(
-                        self.model_name,
-                        export=True,  # Export to ONNX if not already
-                    )
-                    logger.info("✓ ONNX model loaded successfully (3x faster)")
+                    # Try to load existing ONNX model first (fast)
+                    try:
+                        model = ORTModelForSequenceClassification.from_pretrained(
+                            self.model_name,
+                            export=False,  # Don't re-export if already exists
+                        )
+                        logger.info("✓ ONNX model loaded from cache (3x faster)")
+                    except Exception:
+                        # ONNX model doesn't exist, export it (one-time cost)
+                        logger.info("ONNX model not found, exporting (one-time ~12s)...")
+                        model = ORTModelForSequenceClassification.from_pretrained(
+                            self.model_name,
+                            export=True,  # Export to ONNX
+                        )
+                        logger.info("✓ ONNX model exported and cached for future use")
                     
                 except Exception as onnx_error:
                     logger.warning(f"ONNX loading failed: {onnx_error}")
