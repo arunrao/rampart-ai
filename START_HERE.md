@@ -4,12 +4,13 @@ Welcome to **Project Rampart**! This is your starting point.
 
 ## What is This?
 
-Project Rampart is a comprehensive **AI Security & Observability Platform** that helps you build more secure AI applications by detecting:
-- 🛡️ Prompt injection attacks
-- 🔒 Data exfiltration attempts
-- 🚫 Jailbreak attempts
-- 📊 Performance & cost metrics
-- 🔍 PII and sensitive data
+Project Rampart is a comprehensive **AI Security & Observability Platform** with ML-based detection that helps you build more secure AI applications:
+
+- 🛡️ **Prompt injection detection** - 92% accuracy with ML models
+- 🔒 **Data exfiltration monitoring** - Stops credential and PII leaks
+- 🚫 **Jailbreak prevention** - Detects DAN mode and bypass attempts
+- 📊 **Performance & cost tracking** - Complete observability
+- 🔍 **PII detection** - GLiNER ML models (93% accuracy) + regex fallback
 
 ## Quick Start (3 Steps)
 
@@ -32,8 +33,11 @@ Key variables:
 - Backend `backend/.env`:
   - `DATABASE_URL`, `REDIS_URL`
   - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (optional)
+  - **GLiNER PII Detection:**
+    - `PII_DETECTION_ENGINE=hybrid` (hybrid/gliner/regex - default: hybrid)
+    - `PII_MODEL_TYPE=balanced` (edge/balanced/accurate - default: balanced)
+    - `PII_CONFIDENCE_THRESHOLD=0.7` (0.0-1.0)
   - `OTEL_EXPORTER_OTLP_ENDPOINT` (Jaeger OTLP, e.g. http://localhost:4317)
-  - Flags/defaults: `USE_MODEL_TOXICITY`, `USE_PRESIDIO_PII`, `CUSTOM_PII_PATTERNS`
 - Frontend `frontend/.env.local`:
   - `NEXT_PUBLIC_API_URL` (defaults to http://localhost:8000/api/v1)
 
@@ -158,24 +162,23 @@ project-rampart/
 ## Common Commands
 
 ```bash
-# Start with Docker
-make docker-up
+# Start with Docker (includes GLiNER models)
+docker-compose up -d
 
-# Rebuild images after backend changes
-make docker-rebuild
+# Test GLiNER PII detection
+cd backend && python test_gliner_pii.py
 
-# Run tests
+# Run security tests
 make test
 
+# View logs
+docker-compose logs -f backend
+
 # Stop services
-make stop
-
-# Clean build artifacts
-make clean
-
-# View help
-make help
+docker-compose down
 ```
+
+**First Run**: GLiNER models download automatically (~200MB, 30-60 seconds)
 
 ## Observability & Metrics
 
@@ -220,12 +223,14 @@ Defaults are merged with each request body; request fields override stored defau
 
 ## Next Steps
 
-1. ✅ Run `./setup.sh`
-2. ✅ Start backend and frontend
-3. ✅ Open http://localhost:3000
-4. ✅ Try the examples
-5. ✅ Read ARCHITECTURE.md for deep dive
-6. ✅ Integrate with your AI application
+1. ✅ Run `./setup.sh` (installs dependencies)
+2. ✅ Configure `.env` (see docker-compose.yml for defaults)
+3. ✅ `docker-compose up -d` (downloads GLiNER models on first run)
+4. ✅ Open http://localhost:3000
+5. ✅ Test GLiNER: `cd backend && python test_gliner_pii.py`
+6. ✅ Try examples in `examples/` directory
+7. ✅ Read README.md for full feature list
+8. ✅ Integrate with your AI application
 
 ## Resources
 

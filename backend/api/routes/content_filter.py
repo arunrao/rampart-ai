@@ -10,12 +10,28 @@ from datetime import datetime
 from uuid import UUID, uuid4
 from enum import Enum
 import re
+import os
+import logging
 
 from api.routes.auth import get_current_user, TokenData
 from api.routes.security import get_authenticated_user
 from api.routes.rampart_keys import track_api_key_usage
 
+# Import GLiNER detector
+try:
+    from models.pii_detector_gliner import detect_pii_gliner, redact_pii_gliner, PIIEntity as GLiNERPIIEntity
+    GLINER_AVAILABLE = True
+except ImportError:
+    GLINER_AVAILABLE = False
+    GLiNERPIIEntity = None
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Configuration
+PII_DETECTION_ENGINE = os.getenv("PII_DETECTION_ENGINE", "hybrid")  # hybrid, gliner, regex, presidio
+PII_MODEL_TYPE = os.getenv("PII_MODEL_TYPE", "balanced")  # edge, balanced, accurate
+PII_CONFIDENCE_THRESHOLD = float(os.getenv("PII_CONFIDENCE_THRESHOLD", "0.7"))
 
 # Optional DB-backed defaults availability
 try:
@@ -157,8 +173,9 @@ class ContentFilterResponse(BaseModel):
 filter_results: Dict[UUID, ContentFilterResponse] = {}
 
 
-def detect_pii(content: str, custom_patterns: Optional[Dict[str, str]] = None) -> List[PIIEntity]:
-    """Detect PII in content using regex patterns.
+def detect_pii_regex(content: str, custom_patterns: Optional[Dict[str, str]] = None) -> List[PIIEntity]:
+    """
+    Detect PII in content using regex patterns (legacy/fallback method).
     You can augment defaults with custom named regex patterns.
     """
     entities = []
@@ -236,6 +253,146 @@ def detect_pii(content: str, custom_patterns: Optional[Dict[str, str]] = None) -
                 continue
 
     return entities
+
+
+def _convert_gliner_to_pii_entity(gliner_entity) -> PIIEntity:
+    """Convert GLiNER PIIEntity to our PIIEntity format"""
+    # Map GLiNER type to PIIType enum
+    type_mapping = {
+        "email": PIIType.EMAIL,
+        "phone": PIIType.PHONE,
+        "ssn": PIIType.SSN,
+        "credit_card": PIIType.CREDIT_CARD,
+        "ip_address": PIIType.IP_ADDRESS,
+        "name": PIIType.NAME,
+        "address": PIIType.ADDRESS,
+    }
+    
+    pii_type = type_mapping.get(gliner_entity.type, PIIType.NAME)
+    
+    return PIIEntity(
+        type=pii_type,
+        value=gliner_entity.value,
+        start=gliner_entity.start,
+        end=gliner_entity.end,
+        confidence=gliner_entity.confidence,
+        label=gliner_entity.label
+    )
+
+
+def detect_pii(content: str, custom_patterns: Optional[Dict[str, str]] = None) -> List[PIIEntity]:
+    """
+    Detect PII in content using the configured detection engine.
+    
+    Detection engines:
+    - hybrid: GLiNER for unstructured, regex for structured (DEFAULT)
+    - gliner: GLiNER ML model only
+    - regex: Regex patterns only (fastest)
+    - presidio: Microsoft Presidio (if available)
+    
+    Args:
+        content: Text to analyze
+        custom_patterns: Additional regex patterns (used in regex/hybrid modes)
+    
+    Returns:
+        List of detected PII entities
+    """
+    engine = PII_DETECTION_ENGINE.lower()
+    
+    # GLiNER engine
+    if engine == "gliner":
+        if GLINER_AVAILABLE:
+            try:
+                gliner_entities = detect_pii_gliner(
+                    content,
+                    model_type=PII_MODEL_TYPE,
+                    threshold=PII_CONFIDENCE_THRESHOLD
+                )
+                return [_convert_gliner_to_pii_entity(e) for e in gliner_entities]
+            except Exception as e:
+                logger.error(f"GLiNER detection failed: {e}, falling back to regex")
+                return detect_pii_regex(content, custom_patterns)
+        else:
+            logger.warning("GLiNER not available, falling back to regex")
+            return detect_pii_regex(content, custom_patterns)
+    
+    # Hybrid engine (RECOMMENDED)
+    elif engine == "hybrid":
+        entities = []
+        
+        # Use GLiNER for semantic/unstructured PII (names, addresses, etc.)
+        if GLINER_AVAILABLE:
+            try:
+                gliner_entities = detect_pii_gliner(
+                    content,
+                    model_type=PII_MODEL_TYPE,
+                    custom_labels=["person name", "full name", "address", "organization"],
+                    threshold=PII_CONFIDENCE_THRESHOLD
+                )
+                entities.extend([_convert_gliner_to_pii_entity(e) for e in gliner_entities])
+            except Exception as e:
+                logger.error(f"GLiNER detection failed in hybrid mode: {e}")
+        
+        # Use regex for structured PII (SSN, credit cards, emails, phones)
+        # These are faster and just as accurate with regex
+        regex_entities = detect_pii_regex(content, custom_patterns)
+        
+        # Merge and deduplicate (prefer higher confidence)
+        entities.extend(regex_entities)
+        entities = _deduplicate_pii_entities(entities)
+        
+        return entities
+    
+    # Presidio engine
+    elif engine == "presidio":
+        presidio_entities, _ = detect_pii_presidio(content)
+        if presidio_entities:
+            return presidio_entities
+        else:
+            # Fallback to regex if Presidio unavailable
+            logger.warning("Presidio not available, falling back to regex")
+            return detect_pii_regex(content, custom_patterns)
+    
+    # Regex engine (default/fallback)
+    else:
+        return detect_pii_regex(content, custom_patterns)
+
+
+def _deduplicate_pii_entities(entities: List[PIIEntity]) -> List[PIIEntity]:
+    """
+    Deduplicate PII entities that overlap (prefer higher confidence).
+    
+    Args:
+        entities: List of PII entities (possibly overlapping)
+    
+    Returns:
+        Deduplicated list
+    """
+    if not entities:
+        return []
+    
+    # Sort by start position, then by confidence (descending)
+    sorted_entities = sorted(entities, key=lambda e: (e.start, -e.confidence))
+    
+    result = []
+    for entity in sorted_entities:
+        # Check if this entity overlaps with any existing entity
+        overlaps = False
+        for existing in result:
+            # Check for overlap
+            if not (entity.end <= existing.start or entity.start >= existing.end):
+                overlaps = True
+                # If this entity has higher confidence, replace existing
+                if entity.confidence > existing.confidence:
+                    result.remove(existing)
+                    result.append(entity)
+                break
+        
+        if not overlaps:
+            result.append(entity)
+    
+    # Sort by start position for final output
+    return sorted(result, key=lambda e: e.start)
 
 
 def analyze_toxicity(

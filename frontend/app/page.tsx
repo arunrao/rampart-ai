@@ -67,15 +67,15 @@ function HomePageContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+    <div className="min-h-screen bg-background p-6">
       {/* Main Content */}
       <div className="container mx-auto">
         {/* Hero Section */}
         <div className="mb-12 text-center">
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">
+          <h2 className="text-4xl font-bold text-foreground mb-4">
             Secure Your AI Applications
           </h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+          <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
             Comprehensive security and observability platform combining prompt injection detection,
             data exfiltration monitoring, content filtering, and policy management.
           </p>

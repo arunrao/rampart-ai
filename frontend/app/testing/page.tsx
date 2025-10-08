@@ -106,17 +106,17 @@ export default function TestingPage() {
     : scenarios;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       {/* Header */}
-      <header className="border-b bg-white">
+      <header className="border-b bg-card">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center space-x-3">
-            <Link href="/" className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
+            <Link href="/" className="flex items-center space-x-2 text-muted-foreground hover:text-foreground">
               <FlaskConical className="h-6 w-6" />
               <span className="font-semibold">Project Rampart</span>
             </Link>
-            <span className="text-gray-400">/</span>
-            <h1 className="text-xl font-bold text-gray-900">Security Testing</h1>
+            <span className="text-muted-foreground">/</span>
+            <h1 className="text-xl font-bold text-foreground">Security Testing</h1>
           </div>
         </div>
       </header>
@@ -174,17 +174,17 @@ export default function TestingPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-center p-4 bg-muted rounded-lg">
                 <div className="text-3xl font-bold">{testResults.total_tests}</div>
-                <div className="text-sm text-gray-600">Total Tests</div>
+                <div className="text-sm text-muted-foreground">Total Tests</div>
               </div>
               <div className="text-center p-4 bg-green-50 rounded-lg">
                 <div className="text-3xl font-bold text-green-600">{testResults.passed}</div>
-                <div className="text-sm text-gray-600">Passed</div>
+                <div className="text-sm text-muted-foreground">Passed</div>
               </div>
               <div className="text-center p-4 bg-red-50 rounded-lg">
                 <div className="text-3xl font-bold text-red-600">{testResults.failed}</div>
-                <div className="text-sm text-gray-600">Failed</div>
+                <div className="text-sm text-muted-foreground">Failed</div>
               </div>
             </div>
 
@@ -207,7 +207,7 @@ export default function TestingPage() {
                       )}
                       <div className="flex-1">
                         <div className="font-medium">{result.scenario_name}</div>
-                        <div className="text-sm text-gray-600 mt-1">
+                        <div className="text-sm text-muted-foreground mt-1">
                           {result.scenario_id}
                         </div>
                         {result.error && (
@@ -219,11 +219,11 @@ export default function TestingPage() {
                         {!result.passed && !result.error && (
                           <div className="mt-2 text-sm">
                             <div className="font-medium">Expected:</div>
-                            <pre className="bg-white p-2 rounded mt-1 text-xs overflow-x-auto">
+                            <pre className="bg-card p-2 rounded mt-1 text-xs overflow-x-auto">
                               {JSON.stringify(result.expected, null, 2)}
                             </pre>
                             <div className="font-medium mt-2">Actual:</div>
-                            <pre className="bg-white p-2 rounded mt-1 text-xs overflow-x-auto">
+                            <pre className="bg-card p-2 rounded mt-1 text-xs overflow-x-auto">
                               {JSON.stringify(result.actual, null, 2)}
                             </pre>
                           </div>
@@ -296,25 +296,25 @@ export default function TestingPage() {
                   </Badge>
                 </div>
                 
-                <div className="mt-3 p-3 bg-gray-50 rounded text-sm font-mono">
+                <div className="mt-3 p-3 bg-muted rounded text-sm font-mono">
                   {scenario.test_input}
                 </div>
 
                 <div className="mt-3 flex items-center gap-4 text-sm">
                   {scenario.expected_threat && (
                     <div>
-                      <span className="text-gray-600">Expected:</span>{' '}
+                      <span className="text-muted-foreground">Expected:</span>{' '}
                       <Badge variant="outline">{scenario.expected_threat}</Badge>
                     </div>
                   )}
                   {scenario.expected_severity && (
                     <div>
-                      <span className="text-gray-600">Severity:</span>{' '}
+                      <span className="text-muted-foreground">Severity:</span>{' '}
                       <Badge variant="outline">{scenario.expected_severity}</Badge>
                     </div>
                   )}
                   <div>
-                    <span className="text-gray-600">Should Block:</span>{' '}
+                    <span className="text-muted-foreground">Should Block:</span>{' '}
                     <Badge variant={scenario.should_block ? 'destructive' : 'default'}>
                       {scenario.should_block ? 'Yes' : 'No'}
                     </Badge>

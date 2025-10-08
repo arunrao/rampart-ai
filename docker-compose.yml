@@ -40,17 +40,34 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # Core Configuration
       - DATABASE_URL=postgresql://rampart:${POSTGRES_PASSWORD:-rampart_dev_password}@postgres:5432/rampart
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production-min-32-chars-long}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret-key-change-in-production-min-32}
       - KEY_ENCRYPTION_SECRET=${KEY_ENCRYPTION_SECRET:-dev-encryption-key-change-in-production-32-chars}
+      
+      # OAuth
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      
+      # LLM Provider API Keys
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      
+      # GLiNER PII Detection Configuration
+      - PII_DETECTION_ENGINE=${PII_DETECTION_ENGINE:-hybrid}
+      - PII_MODEL_TYPE=${PII_MODEL_TYPE:-balanced}
+      - PII_CONFIDENCE_THRESHOLD=${PII_CONFIDENCE_THRESHOLD:-0.7}
+      - PII_USE_ONNX=${PII_USE_ONNX:-true}
+      
+      # Observability
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      
+      # CORS
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      
+      # Environment
       - ENVIRONMENT=development
       - DEBUG=true
     depends_on:

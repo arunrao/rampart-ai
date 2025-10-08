@@ -25,15 +25,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarContext.Provider value={{ isSidebarOpen, setIsSidebarOpen }}>
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <div className="min-h-screen bg-background transition-colors duration-200">
         <Navigation />
         
-        {/* Main Content Area - no margin on auth pages */}
+        {/* Main Content Area - account for sidebar and top bar */}
         <main
           className={
             isAuthPage
               ? ""
-              : `transition-all duration-300 ease-in-out ${isSidebarOpen ? "lg:ml-64" : "lg:ml-20"}`
+              : `transition-all duration-300 ease-in-out pt-16 ${isSidebarOpen ? "lg:ml-64" : "lg:ml-20"}`
           }
         >
           {children}

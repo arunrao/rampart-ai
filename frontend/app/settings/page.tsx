@@ -24,6 +24,51 @@ interface Provider {
   docs_url: string;
 }
 
+const DEFAULT_PROVIDERS: Provider[] = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    description: "Use GPT models like GPT-4o, GPT-4.1, GPT-3.5.",
+    key_format: "sk-...",
+    docs_url: "https://platform.openai.com/docs/overview",
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic Claude",
+    description: "Use Claude models for high-quality reasoning.",
+    key_format: "sk-ant-...",
+    docs_url: "https://docs.anthropic.com/claude/docs",
+  },
+  {
+    id: "cohere",
+    name: "Cohere",
+    description: "Use Cohere Command models.",
+    key_format: "api-...",
+    docs_url: "https://docs.cohere.com/",
+  },
+  {
+    id: "google",
+    name: "Google Vertex AI",
+    description: "Use Gemini models via Vertex AI.",
+    key_format: "ya29... (OAuth token or service account)",
+    docs_url: "https://cloud.google.com/vertex-ai/docs",
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    description: "Use Mistral small/medium/large models.",
+    key_format: "sk-...",
+    docs_url: "https://docs.mistral.ai/",
+  },
+  {
+    id: "bedrock",
+    name: "AWS Bedrock",
+    description: "Use Bedrock models (Claude, Llama, etc.) via AWS.",
+    key_format: "AWS credentials (Access key/Secret key)",
+    docs_url: "https://docs.aws.amazon.com/bedrock/",
+  },
+];
+
 export default function SettingsPage() {
   return (
     <ProtectedRoute>
@@ -66,7 +111,28 @@ function SettingsPageContent() {
       // Load providers
       const providersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api-keys/providers`);
       const providersData = await providersRes.json();
-      setProviders(providersData);
+      let providerList: Provider[] = [];
+      if (Array.isArray(providersData)) {
+        providerList = providersData as Provider[];
+      } else if (Array.isArray((providersData as any)?.providers)) {
+        providerList = (providersData as any).providers as Provider[];
+      } else if (providersData && typeof providersData === "object") {
+        // Handle object map format: { openai: {...}, anthropic: {...} }
+        providerList = Object.entries(providersData as Record<string, any>).map(([id, info]) => ({
+          id,
+          name: info?.name || id,
+          description: info?.description || "",
+          key_format: info?.key_format || "",
+          docs_url: info?.docs_url || "",
+        }));
+      }
+      // Filter to supported providers only
+      const allowedIds = new Set(DEFAULT_PROVIDERS.map((p) => p.id));
+      providerList = providerList.filter((p) => allowedIds.has(p.id));
+      if (!providerList || providerList.length === 0) {
+        providerList = DEFAULT_PROVIDERS;
+      }
+      setProviders(providerList);
 
       // Load user's keys
       const keysRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api-keys/keys`, {
@@ -81,8 +147,11 @@ function SettingsPageContent() {
       }
 
       const keysData = await keysRes.json();
-      // Transform to match expected format
-      const transformedKeys = keysData.map((key: any) => ({
+      // Normalize and transform to match expected format
+      const keysArray: any[] = Array.isArray(keysData)
+        ? keysData
+        : (Array.isArray((keysData as any)?.keys) ? (keysData as any).keys : []);
+      const transformedKeys = keysArray.map((key: any) => ({
         id: key.id,
         provider: key.provider,
         masked_key: key.key_preview,
@@ -189,19 +258,19 @@ function SettingsPageContent() {
   }
 
   return (
-    <div className="p-8">
+    <div className="min-h-screen bg-background p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-white">Settings</h1>
-            <p className="text-gray-400 mt-2">
+            <h1 className="text-3xl font-bold text-foreground">Settings</h1>
+            <p className="text-muted-foreground mt-2">
               Manage your API keys and account settings
             </p>
           </div>
           <button
             onClick={handleLogout}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md"
+            className="px-4 py-2 bg-card hover:bg-accent text-foreground rounded-md border border-border"
           >
             Logout
           </button>
@@ -220,24 +289,24 @@ function SettingsPageContent() {
         )}
 
         {/* API Keys Section */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-          <h2 className="text-xl font-semibold text-white mb-4">API Keys</h2>
-          <p className="text-gray-400 mb-6">
+        <div className="bg-card rounded-lg border border-border p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-4">API Keys</h2>
+          <p className="text-muted-foreground mb-6">
             Add your LLM provider API keys to start using Project Rampart
           </p>
 
           <div className="space-y-4">
-            {providers.map((provider) => {
+            {Array.isArray(providers) && providers.map((provider) => {
               const existingKey = keys.find((k) => k.provider === provider.id);
 
               return (
                 <div
                   key={provider.id}
-                  className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg border border-gray-600"
+                  className="flex items-center justify-between p-4 bg-card rounded-lg border border-border"
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-medium text-white">
+                      <h3 className="text-lg font-medium text-foreground">
                         {provider.name}
                       </h3>
                       {existingKey && (
@@ -246,11 +315,11 @@ function SettingsPageContent() {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-400 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {provider.description}
                     </p>
                     {existingKey && (
-                      <p className="text-sm text-gray-500 mt-2 font-mono">
+                      <p className="text-sm text-muted-foreground mt-2 font-mono">
                         {existingKey.masked_key}
                       </p>
                     )}
@@ -261,7 +330,7 @@ function SettingsPageContent() {
                       <>
                         <button
                           onClick={() => handleAddKey(provider)}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
+                          className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm"
                         >
                           Update
                         </button>
@@ -275,7 +344,7 @@ function SettingsPageContent() {
                     ) : (
                       <button
                         onClick={() => handleAddKey(provider)}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
+                        className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm"
                       >
                         Add Key
                       </button>
@@ -288,12 +357,12 @@ function SettingsPageContent() {
         </div>
 
         {/* Account Info */}
-        <div className="mt-8 bg-gray-800 rounded-lg border border-gray-700 p-6">
-          <h2 className="text-xl font-semibold text-white mb-4">Account</h2>
+        <div className="mt-8 bg-card rounded-lg border border-border p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-4">Account</h2>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-gray-400">Email:</span>
-              <span className="text-white">{localStorage.getItem("user_email")}</span>
+              <span className="text-muted-foreground">Email:</span>
+              <span className="text-foreground">{localStorage.getItem("user_email")}</span>
             </div>
           </div>
         </div>

@@ -181,18 +181,18 @@ export default function APIKeysPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       {/* Header */}
-      <header className="border-b bg-white">
+      <header className="border-b bg-card">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Link href="/" className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
+              <Link href="/" className="flex items-center space-x-2 text-muted-foreground hover:text-foreground">
                 <Key className="h-6 w-6" />
                 <span className="font-semibold">Project Rampart</span>
               </Link>
-              <span className="text-gray-400">/</span>
-              <h1 className="text-xl font-bold text-gray-900">API Keys</h1>
+              <span className="text-muted-foreground">/</span>
+              <h1 className="text-xl font-bold text-foreground">API Keys</h1>
             </div>
             <Button onClick={() => setShowCreateForm(!showCreateForm)}>
               <Plus className="w-4 h-4 mr-2" />
@@ -236,7 +236,7 @@ export default function APIKeysPage() {
                 <Label>Permissions</Label>
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   {AVAILABLE_PERMISSIONS.map((perm) => (
-                    <label key={perm.value} className="flex items-center space-x-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
+                    <label key={perm.value} className="flex items-center space-x-2 p-2 border rounded cursor-pointer hover:bg-accent">
                       <input
                         type="checkbox"
                         checked={createForm.permissions.includes(perm.value)}
@@ -256,7 +256,7 @@ export default function APIKeysPage() {
                       />
                       <div>
                         <div className="font-medium text-sm">{perm.label}</div>
-                        <div className="text-xs text-gray-500">{perm.description}</div>
+                        <div className="text-xs text-muted-foreground">{perm.description}</div>
                       </div>
                     </label>
                   ))}
@@ -362,9 +362,9 @@ export default function APIKeysPage() {
         {keys.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
-              <Key className="w-12 h-12 text-gray-400 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No API keys yet</h3>
-              <p className="text-gray-600 text-center mb-4">
+              <Key className="w-12 h-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">No API keys yet</h3>
+              <p className="text-muted-foreground text-center mb-4">
                 Create your first API key to start using Rampart in your applications
               </p>
               <Button onClick={() => setShowCreateForm(true)}>
@@ -418,7 +418,7 @@ export default function APIKeysPage() {
                       <Activity className="w-4 h-4 mr-1" />
                       Usage Stats
                     </h4>
-                    <div className="text-sm text-gray-600 space-y-1">
+                    <div className="text-sm text-muted-foreground space-y-1">
                       <div>Requests: {key.usage_stats?.total_requests || 0}</div>
                       <div>Tokens: {key.usage_stats?.tokens_used || 0}</div>
                       <div>Cost: ${(key.usage_stats?.cost_usd || 0).toFixed(4)}</div>
@@ -430,7 +430,7 @@ export default function APIKeysPage() {
                       <Calendar className="w-4 h-4 mr-1" />
                       Dates
                     </h4>
-                    <div className="text-sm text-gray-600 space-y-1">
+                    <div className="text-sm text-muted-foreground space-y-1">
                       <div>Created: {formatDate(key.created_at)}</div>
                       <div>Last used: {key.last_used_at ? formatDate(key.last_used_at) : 'Never'}</div>
                       {key.expires_at && (
@@ -441,7 +441,7 @@ export default function APIKeysPage() {
                 </div>
                 
                 <div className="mt-4 pt-4 border-t">
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-muted-foreground">
                     <strong>Rate Limits:</strong> {key.rate_limit_per_minute}/min, {key.rate_limit_per_hour}/hour
                   </div>
                 </div>
@@ -463,7 +463,7 @@ export default function APIKeysPage() {
           <div className="space-y-4">
             <div>
               <h4 className="font-medium mb-2">JavaScript/TypeScript</h4>
-              <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
+              <pre className="bg-muted p-3 rounded text-sm overflow-x-auto">
 {`const response = await fetch('http://localhost:8000/api/v1/security/analyze', {
   method: 'POST',
   headers: {
@@ -480,7 +480,7 @@ export default function APIKeysPage() {
             
             <div>
               <h4 className="font-medium mb-2">Python</h4>
-              <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
+              <pre className="bg-muted p-3 rounded text-sm overflow-x-auto">
 {`import requests
 
 response = requests.post(
@@ -499,7 +499,7 @@ response = requests.post(
             
             <div>
               <h4 className="font-medium mb-2">cURL</h4>
-              <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
+              <pre className="bg-muted p-3 rounded text-sm overflow-x-auto">
 {`curl -X POST http://localhost:8000/api/v1/security/analyze \\
   -H "Authorization: Bearer rmp_live_your_api_key_here" \\
   -H "Content-Type: application/json" \\

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSidebar } from "./AppLayout";
+import ThemeToggle from "./ThemeToggle";
 import {
   Settings,
   LogOut,
@@ -50,7 +51,7 @@ export default function Navigation() {
       {/* Mobile Menu Button */}
       <button
         onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-card border border-border shadow-lg hover:bg-accent transition-colors"
         aria-label="Toggle menu"
       >
         {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -64,10 +65,23 @@ export default function Navigation() {
         />
       )}
 
+      {/* Top Bar (Desktop Only) */}
+      <div 
+        className={`
+          hidden lg:block fixed top-0 right-0 h-16 bg-card border-b border-border z-30 
+          transition-all duration-300 ease-in-out
+          ${isSidebarOpen ? "left-64" : "left-20"}
+        `}
+      >
+        <div className="flex items-center justify-end h-full px-6 gap-4">
+          <ThemeToggle />
+        </div>
+      </div>
+
       {/* Sidebar */}
       <aside
         className={`
-          fixed top-0 left-0 h-full bg-gray-900 border-r border-gray-700 z-40
+          fixed top-0 left-0 h-full bg-card dark:bg-gray-900 border-r border-border z-40
           transition-all duration-300 ease-in-out
           ${isSidebarOpen ? "w-64" : "w-20"}
           ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
@@ -75,21 +89,21 @@ export default function Navigation() {
       >
         <div className="flex flex-col h-full">
           {/* Logo & Toggle */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-700">
+          <div className="flex items-center justify-between p-4 border-b border-border">
             <Link
               href="/"
-              className={`flex items-center gap-3 text-white font-bold transition-all ${
+              className={`flex items-center gap-3 font-bold transition-all ${
                 isSidebarOpen ? "text-lg" : "text-base justify-center"
               }`}
               onClick={() => setIsMobileMenuOpen(false)}
             >
-              <Shield className="w-7 h-7 text-blue-500 flex-shrink-0" />
+              <Shield className="w-7 h-7 text-primary flex-shrink-0" />
               {isSidebarOpen && <span>Rampart</span>}
             </Link>
             
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="hidden lg:block p-1.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+              className="hidden lg:block p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
               aria-label="Toggle sidebar"
             >
               {isSidebarOpen ? (
@@ -116,8 +130,8 @@ export default function Navigation() {
                         transition-all duration-200 group
                         ${
                           isActive
-                            ? "bg-blue-600 text-white"
-                            : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                            ? "bg-primary text-primary-foreground"
+                            : "text-foreground/70 hover:bg-accent hover:text-foreground"
                         }
                         ${!isSidebarOpen && "justify-center"}
                       `}
@@ -125,7 +139,7 @@ export default function Navigation() {
                     >
                       <Icon
                         className={`w-5 h-5 flex-shrink-0 ${
-                          isActive ? "text-white" : "text-gray-400 group-hover:text-white"
+                          isActive ? "" : "text-muted-foreground group-hover:text-foreground"
                         }`}
                       />
                       {isSidebarOpen && (
@@ -139,11 +153,16 @@ export default function Navigation() {
           </nav>
 
           {/* User Section */}
-          <div className="border-t border-gray-700 p-3 space-y-1">
+          <div className="border-t border-border p-3 space-y-1">
+            {/* Theme Toggle (Mobile Only) */}
+            <div className="lg:hidden mb-3 px-3">
+              <ThemeToggle />
+            </div>
+
             {/* User Info */}
             {user && isSidebarOpen && (
               <div className="px-3 py-2 mb-2">
-                <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
               </div>
             )}
             
@@ -153,13 +172,13 @@ export default function Navigation() {
               onClick={() => setIsMobileMenuOpen(false)}
               className={`
                 flex items-center gap-3 px-3 py-2.5 rounded-lg
-                text-gray-300 hover:bg-gray-800 hover:text-white
+                text-foreground/70 hover:bg-accent hover:text-foreground
                 transition-colors group
                 ${!isSidebarOpen && "justify-center"}
               `}
               title={!isSidebarOpen ? "Settings" : undefined}
             >
-              <Settings className="w-5 h-5 flex-shrink-0 text-gray-400 group-hover:text-white" />
+              <Settings className="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-foreground" />
               {isSidebarOpen && <span className="text-sm font-medium">Settings</span>}
             </Link>
 
@@ -171,13 +190,13 @@ export default function Navigation() {
               }}
               className={`
                 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-                text-gray-300 hover:bg-gray-800 hover:text-white
+                text-foreground/70 hover:bg-accent hover:text-foreground
                 transition-colors group
                 ${!isSidebarOpen && "justify-center"}
               `}
               title={!isSidebarOpen ? "Logout" : undefined}
             >
-              <LogOut className="w-5 h-5 flex-shrink-0 text-gray-400 group-hover:text-white" />
+              <LogOut className="w-5 h-5 flex-shrink-0 text-muted-foreground group-hover:text-foreground" />
               {isSidebarOpen && <span className="text-sm font-medium">Logout</span>}
             </button>
           </div>

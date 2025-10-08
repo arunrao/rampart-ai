@@ -31,18 +31,18 @@ function ObservabilityPageContent() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       {/* Header */}
-      <header className="border-b bg-white">
+      <header className="border-b bg-card">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Link href="/" className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
+              <Link href="/" className="flex items-center space-x-2 text-muted-foreground hover:text-foreground">
                 <Activity className="h-6 w-6" />
                 <span className="font-semibold">Project Rampart</span>
               </Link>
-              <span className="text-gray-400">/</span>
-              <h1 className="text-xl font-bold text-gray-900">Observability</h1>
+              <span className="text-muted-foreground">/</span>
+              <h1 className="text-xl font-bold text-foreground">Observability</h1>
             </div>
           </div>
         </div>

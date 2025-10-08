@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    curl \
     && pip install --no-cache-dir --upgrade pip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -18,16 +19,25 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # Copy application code
 COPY . .
 
+# Create model cache directory
+RUN mkdir -p /app/.cache/huggingface
+
+# GLiNER model warmup (optional: pre-download models to speed up first run)
+# Uncomment to pre-download the default "balanced" model during build
+# This adds ~200MB to image size but eliminates first-run download
+# RUN python -c "from models.pii_detector_gliner import get_gliner_detector; get_gliner_detector(model_type='balanced').detect('warmup')" || true
+
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
+    && chown -R app:app /app \
+    && chown -R app:app /app/.cache
 USER app
 
 # Expose port
 EXPOSE 8000
 
-# Simple health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=2 \
+# Extended health check with startup period for model loading
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=2 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
 
 # Run the application

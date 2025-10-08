@@ -46,18 +46,18 @@ function ContentFilterPageContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       {/* Header */}
-      <header className="border-b bg-white">
+      <header className="border-b bg-card">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Link href="/" className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
+              <Link href="/" className="flex items-center space-x-2 text-muted-foreground hover:text-foreground">
                 <Shield className="h-6 w-6" />
                 <span className="font-semibold">Project Rampart</span>
               </Link>
-              <span className="text-gray-400">/</span>
-              <h1 className="text-xl font-bold text-gray-900">Content Filter</h1>
+              <span className="text-muted-foreground">/</span>
+              <h1 className="text-xl font-bold text-foreground">Content Filter</h1>
             </div>
           </div>
         </div>
@@ -133,7 +133,7 @@ function ContentFilterPageContent() {
                       <span className="text-xs text-muted-foreground">{key.key_preview}</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <div className="w-32 bg-gray-200 rounded-full h-2">
+                      <div className="w-32 bg-muted rounded-full h-2">
                         <div
                           className="bg-green-600 h-2 rounded-full"
                           style={{
@@ -167,7 +167,7 @@ function ContentFilterPageContent() {
                       {type.replace(/_/g, " ")}
                     </span>
                     <div className="flex items-center space-x-2">
-                      <div className="w-32 bg-gray-200 rounded-full h-2">
+                      <div className="w-32 bg-muted rounded-full h-2">
                         <div
                           className="bg-orange-600 h-2 rounded-full"
                           style={{
@@ -201,7 +201,7 @@ function ContentFilterPageContent() {
                   Content to Analyze
                 </label>
                 <textarea
-                  className="w-full h-32 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full h-32 px-3 py-2 border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                   placeholder="Enter content to analyze for PII, toxicity, etc..."
                   value={content}
                   onChange={(e) => setContent(e.target.value)}

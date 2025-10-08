@@ -12,7 +12,7 @@ const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
       className={`relative w-full rounded-lg border p-4 ${
         variant === "destructive"
           ? "border-red-200 bg-red-50 text-red-900"
-          : "border-gray-200 bg-gray-50 text-gray-900"
+          : "border-border bg-muted text-foreground"
       } ${className || ''}`}
       {...props}
     />

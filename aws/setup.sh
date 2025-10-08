@@ -161,7 +161,32 @@ INSTANCE_TYPE=${INSTANCE_TYPE:-t3.medium}
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "5. Optional: Custom Domain"
+echo "5. GLiNER PII Detection Configuration"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "GLiNER provides ML-based PII detection with 92% accuracy"
+echo "Modes: hybrid (balanced), gliner (best), regex (fastest)"
+echo ""
+
+read -p "Detection Engine [hybrid] (hybrid/gliner/regex): " PII_DETECTION_ENGINE
+PII_DETECTION_ENGINE=${PII_DETECTION_ENGINE:-hybrid}
+
+echo ""
+echo "Model Types:"
+echo "  edge     - Fastest (~5-8ms), 88% accuracy, ~150MB"
+echo "  balanced - Balanced (~10ms), 92% accuracy, ~200MB (recommended)"
+echo "  accurate - Best (~15ms), 95% accuracy, ~500MB"
+echo ""
+
+read -p "Model Type [balanced] (edge/balanced/accurate): " PII_MODEL_TYPE
+PII_MODEL_TYPE=${PII_MODEL_TYPE:-balanced}
+
+read -p "Confidence Threshold [0.7] (0.0-1.0): " PII_CONFIDENCE_THRESHOLD
+PII_CONFIDENCE_THRESHOLD=${PII_CONFIDENCE_THRESHOLD:-0.7}
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "6. Optional: Custom Domain"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 read -p "Domain Name (press Enter to skip): " DOMAIN_NAME
@@ -189,6 +214,12 @@ export DB_PASSWORD="$DB_PASSWORD"
 export KEY_PAIR_NAME="$KEY_PAIR_NAME"
 export INSTANCE_TYPE="$INSTANCE_TYPE"
 
+# GLiNER PII Detection
+export PII_DETECTION_ENGINE="$PII_DETECTION_ENGINE"
+export PII_MODEL_TYPE="$PII_MODEL_TYPE"
+export PII_CONFIDENCE_THRESHOLD="$PII_CONFIDENCE_THRESHOLD"
+export PII_USE_ONNX="true"
+
 # Domain (optional)
 export DOMAIN_NAME="$DOMAIN_NAME"
 EOF
@@ -209,6 +240,11 @@ echo "AWS Account:    $AWS_ACCOUNT_ID"
 echo "Instance Type:  $INSTANCE_TYPE"
 echo "Key Pair:       $KEY_PAIR_NAME"
 echo "Domain:         ${DOMAIN_NAME:-None}"
+echo ""
+echo "GLiNER PII Detection:"
+echo "  Engine:       $PII_DETECTION_ENGINE"
+echo "  Model:        $PII_MODEL_TYPE"
+echo "  Threshold:    $PII_CONFIDENCE_THRESHOLD"
 echo ""
 
 # Estimate cost

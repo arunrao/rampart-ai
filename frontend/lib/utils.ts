@@ -38,7 +38,7 @@ export function getSeverityColor(severity: string): string {
     case "low":
       return "text-blue-600 bg-blue-50 border-blue-200";
     default:
-      return "text-gray-600 bg-gray-50 border-gray-200";
+      return "text-foreground/70 bg-muted border-border";
   }
 }
 
@@ -56,7 +56,7 @@ export function getStatusColor(status: string): string {
     case "investigating":
       return "text-yellow-600 bg-yellow-50 border-yellow-200";
     case "false_positive":
-      return "text-gray-600 bg-gray-50 border-gray-200";
+      return "text-foreground/70 bg-muted border-border";
     default:
       return "text-blue-600 bg-blue-50 border-blue-200";
   }

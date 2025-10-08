@@ -14,20 +14,20 @@ export default function DocsPage() {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://rampart.arunrao.com/api/v1";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       {/* Header */}
-      <header className="border-b bg-white">
+      <header className="border-b bg-card">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center space-x-3">
-            <Link href="/" className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
+            <Link href="/" className="flex items-center space-x-2 text-muted-foreground hover:text-foreground">
               <BookOpen className="h-6 w-6" />
               <span className="font-semibold">Project Rampart</span>
             </Link>
-            <span className="text-gray-400">/</span>
-            <h1 className="text-xl font-bold text-gray-900">API Documentation</h1>
+            <span className="text-muted-foreground">/</span>
+            <h1 className="text-xl font-bold text-foreground">API Documentation</h1>
           </div>
         </div>
       </header>
@@ -35,19 +35,19 @@ export default function DocsPage() {
       <main className="container mx-auto px-6 py-8 max-w-6xl">
 
         {/* Quick Start Card */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
+        <div className="bg-card border border-border rounded-lg p-6 mb-6 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <Zap className="w-5 h-5 text-yellow-500" />
-            <h2 className="text-xl font-semibold text-gray-900">Quick Start</h2>
+            <h2 className="text-xl font-semibold text-foreground">Quick Start</h2>
           </div>
-          <ol className="space-y-3 text-gray-700">
+          <ol className="space-y-3 text-foreground/80">
             <li className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-sm font-bold text-white">1</span>
               <span>Create a Rampart API Key in the <a href="/api-keys" className="text-blue-600 hover:underline">API Keys</a> tab</span>
             </li>
             <li className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-sm font-bold text-white">2</span>
-              <span>Copy your API key (starts with <code className="px-1 py-0.5 bg-gray-100 rounded text-gray-800 border border-gray-300">rmp_</code>)</span>
+              <span>Copy your API key (starts with <code className="px-1 py-0.5 bg-muted rounded text-foreground border border-border">rmp_</code>)</span>
             </li>
             <li className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-sm font-bold text-white">3</span>
@@ -64,8 +64,8 @@ export default function DocsPage() {
               onClick={() => setSelectedLanguage(lang as any)}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 selectedLanguage === lang
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-300"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-card text-foreground/80 hover:bg-accent border border-border"
               }`}
             >
               {lang.charAt(0).toUpperCase() + lang.slice(1)}
@@ -103,22 +103,22 @@ export default function DocsPage() {
         </div>
 
         {/* API Reference */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6 mt-8 shadow-sm">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">API Reference</h2>
-          <div className="space-y-4 text-gray-700">
+        <div className="bg-card border border-border rounded-lg p-6 mt-8 shadow-sm">
+          <h2 className="text-2xl font-semibold text-foreground mb-4">API Reference</h2>
+          <div className="space-y-4 text-foreground/80">
             <div>
-              <h3 className="font-semibold text-gray-900 mb-2">Base URL</h3>
-              <code className="block bg-gray-100 p-3 rounded text-sm border border-gray-200">{apiUrl}</code>
+              <h3 className="font-semibold text-foreground mb-2">Base URL</h3>
+              <code className="block bg-muted p-3 rounded text-sm border border-border">{apiUrl}</code>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900 mb-2">Authentication</h3>
+              <h3 className="font-semibold text-foreground mb-2">Authentication</h3>
               <p className="mb-2">All requests require an Authorization header:</p>
-              <code className="block bg-gray-100 p-3 rounded text-sm border border-gray-200">
+              <code className="block bg-muted p-3 rounded text-sm border border-border">
                 Authorization: Bearer YOUR_RAMPART_API_KEY
               </code>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900 mb-2">Available Endpoints</h3>
+              <h3 className="font-semibold text-foreground mb-2">Available Endpoints</h3>
               <ul className="list-disc list-inside space-y-1 ml-4">
                 <li><code className="text-blue-600">POST /security/analyze</code> - Analyze content for security threats</li>
                 <li><code className="text-blue-600">POST /filter</code> - Filter content for PII and toxicity</li>
@@ -135,9 +135,9 @@ export default function DocsPage() {
         </div>
 
         {/* Full API Docs Link */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mt-6">
-          <h3 className="font-semibold text-gray-900 mb-2">Need More Details?</h3>
-          <p className="text-gray-700 mb-4">
+        <div className="bg-accent border border-border rounded-lg p-6 mt-6">
+          <h3 className="font-semibold text-foreground mb-2">Need More Details?</h3>
+          <p className="text-foreground/80 mb-4">
             Check out the interactive OpenAPI documentation for detailed request/response schemas.
           </p>
           <a
@@ -245,25 +245,25 @@ result.detections.forEach(detection => {
   const codeId = `security-${language}`;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-      <div className="p-6 border-b border-gray-200">
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">{title}</h3>
-        <p className="text-gray-600">{description}</p>
+    <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
+      <div className="p-6 border-b border-border">
+        <h3 className="text-xl font-semibold text-foreground mb-2">{title}</h3>
+        <p className="text-muted-foreground">{description}</p>
       </div>
       <div className="relative">
         <button
           onClick={() => copyToClipboard(examples[language], codeId)}
-          className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors z-10 border border-gray-300"
+          className="absolute top-4 right-4 p-2 bg-muted hover:bg-accent rounded-lg transition-colors z-10 border border-border"
           title="Copy code"
         >
           {copiedCode === codeId ? (
             <Check className="w-4 h-4 text-green-600" />
           ) : (
-            <Copy className="w-4 h-4 text-gray-600" />
+            <Copy className="w-4 h-4 text-muted-foreground" />
           )}
         </button>
-        <pre className="p-6 bg-gray-50 overflow-x-auto border-t border-gray-200">
-          <code className="text-sm text-gray-800">{examples[language]}</code>
+        <pre className="p-6 bg-muted overflow-x-auto border-t border-border">
+          <code className="text-sm text-foreground">{examples[language]}</code>
         </pre>
       </div>
     </div>
@@ -348,25 +348,25 @@ result.entities.forEach(entity => {
   const codeId = `filter-${language}`;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-      <div className="p-6 border-b border-gray-200">
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">Content Filtering</h3>
-        <p className="text-gray-600">Detect and filter PII, toxic content, and sensitive information</p>
+    <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
+      <div className="p-6 border-b border-border">
+        <h3 className="text-xl font-semibold text-foreground mb-2">Content Filtering</h3>
+        <p className="text-muted-foreground">Detect and filter PII, toxic content, and sensitive information</p>
       </div>
       <div className="relative">
         <button
           onClick={() => copyToClipboard(examples[language], codeId)}
-          className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors z-10 border border-gray-300"
+          className="absolute top-4 right-4 p-2 bg-muted hover:bg-accent rounded-lg transition-colors z-10 border border-border"
           title="Copy code"
         >
           {copiedCode === codeId ? (
             <Check className="w-4 h-4 text-green-600" />
           ) : (
-            <Copy className="w-4 h-4 text-gray-600" />
+            <Copy className="w-4 h-4 text-muted-foreground" />
           )}
         </button>
-        <pre className="p-6 bg-gray-50 overflow-x-auto border-t border-gray-200">
-          <code className="text-sm text-gray-800">{examples[language]}</code>
+        <pre className="p-6 bg-muted overflow-x-auto border-t border-border">
+          <code className="text-sm text-foreground">{examples[language]}</code>
         </pre>
       </div>
     </div>
@@ -460,25 +460,25 @@ console.log(\`Created at: \${trace.created_at}\`);
   const codeId = `trace-${language}`;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-      <div className="p-6 border-b border-gray-200">
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">Observability Tracing</h3>
-        <p className="text-gray-600">Track and monitor your LLM operations with distributed tracing</p>
+    <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
+      <div className="p-6 border-b border-border">
+        <h3 className="text-xl font-semibold text-foreground mb-2">Observability Tracing</h3>
+        <p className="text-muted-foreground">Track and monitor your LLM operations with distributed tracing</p>
       </div>
       <div className="relative">
         <button
           onClick={() => copyToClipboard(examples[language], codeId)}
-          className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors z-10 border border-gray-300"
+          className="absolute top-4 right-4 p-2 bg-muted hover:bg-accent rounded-lg transition-colors z-10 border border-border"
           title="Copy code"
         >
           {copiedCode === codeId ? (
             <Check className="w-4 h-4 text-green-600" />
           ) : (
-            <Copy className="w-4 h-4 text-gray-600" />
+            <Copy className="w-4 h-4 text-muted-foreground" />
           )}
         </button>
-        <pre className="p-6 bg-gray-50 overflow-x-auto border-t border-gray-200">
-          <code className="text-sm text-gray-800">{examples[language]}</code>
+        <pre className="p-6 bg-muted overflow-x-auto border-t border-border">
+          <code className="text-sm text-foreground">{examples[language]}</code>
         </pre>
       </div>
     </div>

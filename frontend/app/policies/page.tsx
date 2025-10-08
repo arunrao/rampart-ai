@@ -53,18 +53,18 @@ function PoliciesPageContent() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       {/* Header */}
-      <header className="border-b bg-white">
+      <header className="border-b bg-card">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Link href="/" className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
+              <Link href="/" className="flex items-center space-x-2 text-muted-foreground hover:text-foreground">
                 <FileText className="h-6 w-6" />
                 <span className="font-semibold">Project Rampart</span>
               </Link>
-              <span className="text-gray-400">/</span>
-              <h1 className="text-xl font-bold text-gray-900">Policy Management</h1>
+              <span className="text-muted-foreground">/</span>
+              <h1 className="text-xl font-bold text-foreground">Policy Management</h1>
             </div>
           </div>
         </div>
@@ -72,9 +72,9 @@ function PoliciesPageContent() {
 
       <main className="container mx-auto px-6 py-8">
         {/* Info Banner */}
-        <Card className="mb-6 border-blue-200 bg-blue-50">
+        <Card className="mb-6 border border-border bg-accent">
           <CardContent className="pt-6">
-            <p className="text-sm text-blue-900">
+            <p className="text-sm text-foreground">
               📋 <strong>Note:</strong> Policy management is currently under development. 
               These settings will apply to both JWT and API key authenticated requests once implemented.
             </p>
@@ -94,7 +94,7 @@ function PoliciesPageContent() {
               {templates?.templates?.map((template: any) => (
                 <div
                   key={template.id}
-                  className="border rounded-lg p-4 hover:bg-slate-50 transition"
+                  className="border rounded-lg p-4 hover:bg-accent transition"
                 >
                   <h3 className="font-semibold mb-2">{template.name}</h3>
                   <p className="text-sm text-muted-foreground mb-4">
@@ -136,7 +136,7 @@ function PoliciesPageContent() {
                 {policies.map((policy: any) => (
                   <div
                     key={policy.id}
-                    className="border rounded-lg p-4 hover:bg-slate-50 transition"
+                    className="border rounded-lg p-4 hover:bg-accent transition"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center space-x-3">
@@ -196,8 +196,8 @@ function PoliciesPageContent() {
               </div>
             ) : (
               <div className="text-center py-12">
-                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">No policies configured</p>
+                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No policies configured</p>
                 <p className="text-sm text-muted-foreground mb-4">
                   Create a policy or use a compliance template
                 </p>
