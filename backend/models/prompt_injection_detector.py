@@ -48,7 +48,7 @@ class PromptInjectionDetector:
             # Direct instruction override
             InjectionPattern(
                 name="instruction_override",
-                pattern=r"(?i)(ignore|disregard|forget|override)\s+(previous|all|above|prior)\s+(instructions?|prompts?|rules?|commands?)",
+                pattern=r"(?i)(ignore|disregard|forget|override)\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?|rules?|commands?)",
                 severity=0.9,
                 description="Attempts to override previous instructions"
             ),
@@ -646,6 +646,7 @@ class HybridPromptInjectionDetector:
         return {
             "is_injection": is_injection,
             "confidence": combined_confidence,
+            "risk_score": combined_confidence,  # Add top-level risk_score for consistency
             "recommendation": recommendation,
             
             # Detailed breakdown
