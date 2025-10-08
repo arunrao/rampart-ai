@@ -10,6 +10,11 @@ Project Rampart provides comprehensive security protection for LLM applications 
 
 **Hybrid Detection System** combining fast regex filtering with ML-powered deep analysis.
 
+> **💡 Integration:** Prompt injection detection is available in multiple endpoints:
+> - **Content Filter API** (`/api/v1/filter`) - Combined with PII and toxicity checks
+> - **Security Analysis API** (`/api/v1/security/analyze`) - Standalone security analysis
+> - **LLM Proxy** (`integrations/llm_proxy.py`) - Automatic protection for all LLM calls
+
 **What it protects against:**
 - Direct instruction override attempts
 - System prompt extraction
@@ -143,6 +148,8 @@ python test_deberta_integration.py
 ### 4. PII Detection & Redaction
 
 **Hybrid ML-based Detection** using GLiNER models with regex fallback for maximum accuracy and reliability.
+
+> **💡 Integration:** PII detection is available as part of the unified **Content Filter API** (`/api/v1/filter`) which also includes prompt injection detection and toxicity analysis. All three filters can be applied in a single API call.
 
 **What it protects:**
 - Email addresses (all formats, international)

@@ -40,7 +40,7 @@ function ContentFilterPageContent() {
     
     filterMutation.mutate({
       content,
-      filters: ["pii", "toxicity"],
+      filters: ["pii", "toxicity", "prompt_injection"],
       redact: true,
     });
   };
@@ -191,7 +191,7 @@ function ContentFilterPageContent() {
           <CardHeader>
             <CardTitle>Test Content Filter</CardTitle>
             <CardDescription>
-              Analyze content for PII, toxicity, and other issues
+              Analyze content for PII, toxicity, prompt injection, and other issues
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -202,7 +202,7 @@ function ContentFilterPageContent() {
                 </label>
                 <textarea
                   className="w-full h-32 px-3 py-2 border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Enter content to analyze for PII, toxicity, etc..."
+                  placeholder="Enter content to analyze for PII, toxicity, prompt injection, etc..."
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                 />
@@ -280,6 +280,64 @@ function ContentFilterPageContent() {
                             {(filterResult.toxicity_scores.threat * 100).toFixed(1)}%
                           </span>
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {filterResult.prompt_injection && (
+                    <div className={`border rounded-lg p-4 ${
+                      filterResult.prompt_injection.is_injection
+                        ? "bg-red-50 dark:bg-red-950/30"
+                        : "bg-green-50 dark:bg-green-950/30"
+                    }`}>
+                      <h3 className={`font-semibold mb-2 ${
+                        filterResult.prompt_injection.is_injection
+                          ? "text-red-900 dark:text-red-100"
+                          : "text-green-900 dark:text-green-100"
+                      }`}>
+                        Prompt Injection Detection
+                      </h3>
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Status:</span>
+                          <Badge 
+                            variant={filterResult.prompt_injection.is_injection ? "destructive" : "default"}
+                            className="ml-2"
+                          >
+                            {filterResult.prompt_injection.is_injection ? "INJECTION DETECTED" : "SAFE"}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Confidence:</span>
+                          <span className="ml-2 font-medium">
+                            {(filterResult.prompt_injection.confidence * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Risk Score:</span>
+                          <span className="ml-2 font-medium">
+                            {(filterResult.prompt_injection.risk_score * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Recommendation:</span>
+                          <span className="ml-2 font-medium">
+                            {filterResult.prompt_injection.recommendation}
+                          </span>
+                        </div>
+                        {filterResult.prompt_injection.patterns_matched && 
+                         filterResult.prompt_injection.patterns_matched.length > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Patterns Matched:</span>
+                            <div className="mt-1 space-x-1">
+                              {filterResult.prompt_injection.patterns_matched.map((pattern: string, idx: number) => (
+                                <Badge key={idx} variant="outline" className="text-xs">
+                                  {pattern}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

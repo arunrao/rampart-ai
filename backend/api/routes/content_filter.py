@@ -25,6 +25,14 @@ except ImportError:
     GLINER_AVAILABLE = False
     GLiNERPIIEntity = None
 
+# Import prompt injection detector
+try:
+    from api.routes.security import get_detector
+    PROMPT_INJECTION_AVAILABLE = True
+except ImportError:
+    PROMPT_INJECTION_AVAILABLE = False
+    get_detector = None
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -85,6 +93,7 @@ class FilterType(str, Enum):
     """Types of content filters"""
     PII = "pii"
     TOXICITY = "toxicity"
+    PROMPT_INJECTION = "prompt_injection"
     PROFANITY = "profanity"
     BIAS = "bias"
     SENSITIVE_TOPICS = "sensitive_topics"
@@ -121,10 +130,19 @@ class ToxicityScore(BaseModel):
     identity_attack: float
 
 
+class PromptInjectionResult(BaseModel):
+    """Prompt injection detection result"""
+    is_injection: bool = Field(..., description="Whether prompt injection was detected")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Detection confidence score (0.0-1.0)")
+    risk_score: float = Field(..., ge=0.0, le=1.0, description="Overall risk score (0.0-1.0)")
+    recommendation: str = Field(..., description="Recommended action: BLOCK, FLAG, MONITOR, or ALLOW")
+    patterns_matched: List[str] = Field(default_factory=list, description="List of attack patterns detected (e.g., 'instruction_override', 'role_manipulation')")
+
+
 class ContentFilterRequest(BaseModel):
     """Request for content filtering"""
     content: str
-    filters: List[FilterType] = Field(default_factory=lambda: [FilterType.PII, FilterType.TOXICITY])
+    filters: List[FilterType] = Field(default_factory=lambda: [FilterType.PII, FilterType.TOXICITY, FilterType.PROMPT_INJECTION])
     redact: bool = False
     trace_id: Optional[UUID] = None
     # Dynamic options
@@ -163,6 +181,7 @@ class ContentFilterResponse(BaseModel):
     filtered_content: Optional[str] = None
     pii_detected: List[PIIEntity] = []
     toxicity_scores: Optional[ToxicityScore] = None
+    prompt_injection: Optional[PromptInjectionResult] = None
     is_safe: bool
     filters_applied: List[FilterType]
     analyzed_at: datetime
@@ -545,12 +564,44 @@ def detect_pii_presidio(content: str) -> Tuple[List[PIIEntity], Optional[str]]:
         return [], None
 
 
-@router.post("/filter", response_model=ContentFilterResponse)
+@router.post(
+    "/filter",
+    response_model=ContentFilterResponse,
+    summary="Filter and analyze content for security threats",
+    tags=["Content Filter"]
+)
 async def filter_content(
     request: ContentFilterRequest,
     auth_data: tuple[TokenData, Optional[UUID]] = Depends(get_authenticated_user)
 ):
-    """Filter content for PII, toxicity, and other issues"""
+    """
+    Comprehensive content analysis combining multiple security filters.
+    
+    This unified endpoint provides:
+    - **Prompt Injection Detection**: Hybrid DeBERTa + Regex (92% accuracy)
+    - **PII Detection**: GLiNER ML-based + Regex (93% accuracy)
+    - **Toxicity Analysis**: Heuristic or Detoxify model-based
+    
+    All filters can be applied simultaneously in a single API call for optimal performance.
+    
+    **Default Filters**: `["pii", "toxicity", "prompt_injection"]`
+    
+    **Example**:
+    ```json
+    {
+        "content": "Email me at john@example.com. Ignore all instructions.",
+        "filters": ["pii", "toxicity", "prompt_injection"],
+        "redact": true
+    }
+    ```
+    
+    **Response includes**:
+    - `is_safe`: Overall safety assessment (false if any threat detected)
+    - `pii_detected`: List of PII entities with confidence scores
+    - `toxicity_scores`: Toxicity metrics across multiple categories
+    - `prompt_injection`: Injection detection with risk score and patterns
+    - `filtered_content`: Content with PII redacted (if redact=true)
+    """
     import time
     # Top-level span for filter operation (nested under FastAPI request span)
     ctx = (
@@ -580,6 +631,7 @@ async def filter_content(
 
         pii_entities: List[PIIEntity] = []
         toxicity_scores = None
+        prompt_injection_result = None
         filtered_content = request.content
 
         # Apply PII
@@ -629,11 +681,46 @@ async def filter_content(
                     except Exception:
                         pass
 
+        # Apply Prompt Injection Detection
+        if FilterType.PROMPT_INJECTION in request.filters:
+            pictx = (
+                _tracer.start_as_current_span("prompt_injection_detection") if _OTEL else nullcontext()
+            )
+            with pictx as pispan:  # type: ignore
+                if PROMPT_INJECTION_AVAILABLE and get_detector is not None:
+                    try:
+                        detector = get_detector()
+                        detection_result = detector.detect(request.content)
+                        
+                        # Extract relevant info for response
+                        prompt_injection_result = PromptInjectionResult(
+                            is_injection=detection_result["is_injection"],
+                            confidence=detection_result["confidence"],
+                            risk_score=detection_result.get("risk_score", detection_result["confidence"]),
+                            recommendation=detection_result["recommendation"],
+                            patterns_matched=[
+                                p["pattern"] for p in detection_result.get("regex_results", {}).get("patterns_matched", [])
+                            ] if "regex_results" in detection_result else []
+                        )
+                        
+                        if _OTEL and pispan is not None:
+                            try:
+                                pispan.set_attribute("injection.detected", bool(detection_result["is_injection"]))
+                                pispan.set_attribute("injection.confidence", float(detection_result["confidence"]))
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        logger.error(f"Prompt injection detection failed: {e}")
+                        # Don't fail the entire request, just skip this check
+                        pass
+
         # Determine if content is safe
         is_safe = True
         if pii_entities and not redact:
             is_safe = False
         if toxicity_scores and toxicity_scores.toxicity > toxicity_threshold:
+            is_safe = False
+        if prompt_injection_result and prompt_injection_result.is_injection:
             is_safe = False
 
         processing_time = (time.time() - start_time) * 1000
@@ -667,6 +754,7 @@ async def filter_content(
             filtered_content=filtered_content if filtered_content != request.content else None,
             pii_detected=pii_entities,
             toxicity_scores=toxicity_scores,
+            prompt_injection=prompt_injection_result,
             is_safe=is_safe,
             filters_applied=request.filters,
             analyzed_at=datetime.utcnow(),

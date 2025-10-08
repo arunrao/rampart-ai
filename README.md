@@ -17,7 +17,7 @@ Project Rampart is a production-ready security gateway and observability platfor
 
 - 🔍 **Observability** (Distributed tracing & monitoring)
 - 🛡️ **Security & Trust** (Prompt injection detection, data exfiltration monitoring)
-- 🔒 **Content Filtering** (PII detection, toxicity screening)
+- 🔒 **Content Filtering** (Prompt injection, PII detection, toxicity screening)
 - 📋 **Policy Management** (RBAC, compliance templates, audit logging)
 - 🔐 **Production Security** (JWT authentication, rate limiting, security headers, encrypted secrets)
 
@@ -49,7 +49,7 @@ Application → Rampart Security Gateway → LLM Provider (OpenAI/Anthropic/etc.
 ### Backend (Python/FastAPI)
 - **Security Layer**: Pattern-based and heuristic detection for prompt injection, jailbreaks, and data exfiltration
 - **Policy Engine**: Rule-based evaluation with compliance templates (GDPR, HIPAA, SOC 2)
-- **Content Filter**: PII detection (email, SSN, credit cards, phone numbers) with redaction capabilities
+- **Content Filter**: Unified endpoint with prompt injection detection, PII detection (GLiNER ML-based), and toxicity analysis
 - **LLM Proxy**: Unified interface for OpenAI, Anthropic with automatic security checks
 - **Authentication**: JWT-based auth with bcrypt password hashing (work factor: 12)
 - **Storage**: PostgreSQL for production, SQLite for development
@@ -126,6 +126,13 @@ Scans LLM outputs for sensitive data leakage and exfiltration attempts:
 
 ### 3. Content Filtering Layer
 **Location**: `backend/api/routes/content_filter.py`
+
+**Comprehensive content analysis combining PII detection, toxicity screening, and prompt injection detection in a single unified endpoint.**
+
+**Filters Available:**
+- ✅ **Prompt Injection Detection** (Hybrid DeBERTa + Regex, 92% accuracy)
+- ✅ **PII Detection** (GLiNER ML-Based, 93% accuracy)
+- ✅ **Toxicity Analysis** (Heuristic/Detoxify-based)
 
 **PII Detection (GLiNER ML-Based):**
 
