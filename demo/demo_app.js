@@ -21,8 +21,18 @@ const http = require('http');
 const { URL } = require('url');
 
 // Configuration
-const API_BASE_URL = "http://localhost:8000/api/v1";
-const API_KEY = "rmp_live_bgUMwrx6F2qZ-Y-H7Ui_xeub6J7WYOIsW2j1xRjJftM"; // Replace with your API key
+const API_BASE_URL = process.env.RAMPART_API_URL || "http://localhost:8000/api/v1";
+const API_KEY = process.env.RAMPART_API_KEY || "";
+
+// Validate API key is provided
+if (!API_KEY || API_KEY === "rmp_live_YOUR_KEY_HERE") {
+    console.error("⚠️  ERROR: Please set your Rampart API key!");
+    console.error("   1. Go to https://rampart.arunrao.com/api-keys");
+    console.error("   2. Create a new API key");
+    console.error("   3. Set it as an environment variable:");
+    console.error("      export RAMPART_API_KEY='your_api_key_here'");
+    process.exit(1);
+}
 
 class RampartClient {
     /**

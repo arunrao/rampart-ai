@@ -67,9 +67,9 @@ function HomePageContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       {/* Main Content */}
-      <main className="container mx-auto px-6 py-12">
+      <div className="container mx-auto">
         {/* Hero Section */}
         <div className="mb-12 text-center">
           <h2 className="text-4xl font-bold text-gray-900 mb-4">
@@ -214,7 +214,7 @@ function HomePageContent() {
             </CardContent>
           </Card>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

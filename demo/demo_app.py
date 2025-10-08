@@ -28,8 +28,17 @@ import sys
 import os
 
 # Configuration
-API_BASE_URL = "http://localhost:8000/api/v1"
-API_KEY = "rmp_live_bgUMwrx6F2qZ-Y-H7Ui_xeub6J7WYOIsW2j1xRjJftM"  # Replace with your API key
+API_BASE_URL = os.getenv("RAMPART_API_URL", "http://localhost:8000/api/v1")
+API_KEY = os.getenv("RAMPART_API_KEY", "")  # Get your API key from https://rampart.arunrao.com/api-keys
+
+# Validate API key is provided
+if not API_KEY or API_KEY == "rmp_live_YOUR_KEY_HERE":
+    print("⚠️  ERROR: Please set your Rampart API key!")
+    print("   1. Go to https://rampart.arunrao.com/api-keys")
+    print("   2. Create a new API key")
+    print("   3. Set it as an environment variable:")
+    print("      export RAMPART_API_KEY='your_api_key_here'")
+    sys.exit(1)
 
 @dataclass
 class SecurityResult:

@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { PlayCircle, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react';
+import { PlayCircle, CheckCircle, XCircle, Clock, AlertTriangle, FlaskConical } from 'lucide-react';
 import { fetchJSON } from '@/utils/api';
 
 interface TestScenario {
@@ -105,13 +106,22 @@ export default function TestingPage() {
     : scenarios;
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Security Testing Suite</h1>
-        <p className="text-gray-600">
-          Run pre-built test scenarios to validate security features
-        </p>
-      </div>
+    <div className="min-h-screen bg-slate-50 p-6">
+      {/* Header */}
+      <header className="border-b bg-white">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center space-x-3">
+            <Link href="/" className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
+              <FlaskConical className="h-6 w-6" />
+              <span className="font-semibold">Project Rampart</span>
+            </Link>
+            <span className="text-gray-400">/</span>
+            <h1 className="text-xl font-bold text-gray-900">Security Testing</h1>
+          </div>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-6 py-8 max-w-7xl">
 
       {/* Quick Actions */}
       <Card className="mb-6">
@@ -315,6 +325,7 @@ export default function TestingPage() {
           </div>
         </CardContent>
       </Card>
+      </main>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 Configuration management for Project Rampart
 """
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from functools import lru_cache
 from typing import Optional
 
@@ -32,7 +33,8 @@ class Settings(BaseSettings):
     # Google OAuth
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
-    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/callback/google"
+    google_redirect_uri: str = Field(default="http://localhost:8000/api/v1/auth/callback/google")
+    frontend_url: str = Field(default="http://localhost:3000")
     
     # Security
     jwt_secret_key: str

@@ -85,12 +85,12 @@ async def create_trace(
     trace: TraceCreate,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Create a new trace for observability"""
+    """Create a new trace for observability (user_id forced to authenticated user)"""
     trace_id = uuid4()
     new_trace = Trace(
         id=trace_id,
         session_id=trace.session_id,
-        user_id=trace.user_id,
+        user_id=str(current_user.user_id),  # Always use authenticated user's ID
         name=trace.name,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
@@ -104,16 +104,17 @@ async def create_trace(
 @router.get("/traces", response_model=List[Trace])
 async def list_traces(
     current_user: TokenData = Depends(get_current_user),
-    user_id: Optional[str] = None,
     session_id: Optional[str] = None,
     limit: int = 50,
     offset: int = 0
 ):
-    """List traces with optional filtering"""
-    filtered_traces = list(traces_db.values())
+    """List traces for the current user with optional filtering"""
+    # Only return traces for the authenticated user
+    filtered_traces = [
+        t for t in traces_db.values() 
+        if not t.user_id or t.user_id == str(current_user.user_id)
+    ]
     
-    if user_id:
-        filtered_traces = [t for t in filtered_traces if t.user_id == user_id]
     if session_id:
         filtered_traces = [t for t in filtered_traces if t.session_id == session_id]
     
@@ -128,10 +129,17 @@ async def get_trace(
     trace_id: UUID,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Get a specific trace by ID"""
+    """Get a specific trace by ID (only if it belongs to the current user)"""
     if trace_id not in traces_db:
         raise HTTPException(status_code=404, detail="Trace not found")
-    return traces_db[trace_id]
+    
+    trace = traces_db[trace_id]
+    
+    # Verify ownership - return 404 to prevent enumeration
+    if trace.user_id and trace.user_id != str(current_user.user_id):
+        raise HTTPException(status_code=404, detail="Trace not found")
+    
+    return trace
 
 
 @router.post("/spans", response_model=Span, status_code=201)
@@ -171,11 +179,19 @@ async def update_span(
     update: SpanUpdate,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Update span with completion data"""
+    """Update span with completion data (only if parent trace belongs to user)"""
     if span_id not in spans_db:
         raise HTTPException(status_code=404, detail="Span not found")
     
     span = spans_db[span_id]
+    
+    # Verify ownership via parent trace
+    if span.trace_id not in traces_db:
+        raise HTTPException(status_code=404, detail="Span not found")
+    
+    parent_trace = traces_db[span.trace_id]
+    if parent_trace.user_id and parent_trace.user_id != str(current_user.user_id):
+        raise HTTPException(status_code=404, detail="Span not found")
     
     # Update fields
     if update.output_data is not None:
@@ -210,8 +226,13 @@ async def get_trace_spans(
     trace_id: UUID,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Get all spans for a trace"""
+    """Get all spans for a trace (only if trace belongs to user)"""
     if trace_id not in traces_db:
+        raise HTTPException(status_code=404, detail="Trace not found")
+    
+    # Verify ownership
+    trace = traces_db[trace_id]
+    if trace.user_id and trace.user_id != str(current_user.user_id):
         raise HTTPException(status_code=404, detail="Trace not found")
     
     trace_spans = [s for s in spans_db.values() if s.trace_id == trace_id]

@@ -1,0 +1,636 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Project Rampart - Complete Infrastructure Stack'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - development
+      - staging
+      - production
+    Description: Environment name
+
+  DomainName:
+    Type: String
+    Default: ""
+    Description: (Optional) Your domain name (e.g., rampart.yourdomain.com)
+
+  GoogleClientId:
+    Type: String
+    NoEcho: true
+    Description: Google OAuth Client ID
+
+  GoogleClientSecret:
+    Type: String
+    NoEcho: true
+    Description: Google OAuth Client Secret
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: RDS PostgreSQL master password
+
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+    Description: EC2 instance type for simple deployment
+
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 Key Pair for SSH access
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref DomainName, ""]]
+  CreateSSL: !Not [!Equals [!Ref DomainName, ""]]
+
+Resources:
+  # VPC and Networking
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-igw
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-public-subnet-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-public-subnet-2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-subnet-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-subnet-2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Security Groups
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Application Load Balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-alb-sg
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EC2 instances
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-ec2-sg
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS PostgreSQL
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-rds-sg
+
+  # RDS PostgreSQL
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-subnet-group
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub ${AWS::StackName}-db
+      DBName: rampart_db
+      Engine: postgres
+      EngineVersion: '15.14'
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: rampart_admin
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: "03:00-04:00"
+      PreferredMaintenanceWindow: "mon:04:00-mon:05:00"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-rds
+
+  # Secrets Manager
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/database
+      Description: RDS database credentials
+      SecretString: !Sub |
+        {
+          "username": "rampart_admin",
+          "password": "${DBPassword}",
+          "host": "${RDSInstance.Endpoint.Address}",
+          "port": "5432",
+          "dbname": "rampart_db",
+          "connection_string": "postgresql://rampart_admin:${DBPassword}@${RDSInstance.Endpoint.Address}:5432/rampart_db"
+        }
+
+  JWTSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/jwt
+      Description: JWT secret key
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: "secret_key"
+        PasswordLength: 64
+        ExcludeCharacters: '"@/\'
+
+  GoogleOAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/google-oauth
+      Description: Google OAuth credentials
+      SecretString: !Sub |
+        {
+          "client_id": "${GoogleClientId}",
+          "client_secret": "${GoogleClientSecret}"
+        }
+
+  # IAM Role for EC2
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref DBSecret
+                  - !Ref JWTSecret
+                  - !Ref GoogleOAuthSecret
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: "*"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # Note: Using existing SSL certificate ARN when domain is provided
+  # Certificate ARN: arn:aws:acm:us-west-2:892987205044:certificate/58b67402-23b3-4bff-8aac-51cd4135d56a
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-alb
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-alb
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-frontend-tg
+      Port: 3000
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      TargetType: instance
+
+  BackendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-backend-tg
+      Port: 8000
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /api/v1/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      TargetType: instance
+
+  # HTTP Listener (redirect to HTTPS if SSL enabled, otherwise serve directly)
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - !If
+          - CreateSSL
+          - Type: redirect
+            RedirectConfig:
+              Protocol: HTTPS
+              Port: 443
+              StatusCode: HTTP_301
+          - Type: forward
+            TargetGroupArn: !Ref FrontendTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # HTTPS Listener (only if SSL certificate is created)
+  ALBListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateSSL
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-west-2:892987205044:certificate/58b67402-23b3-4bff-8aac-51cd4135d56a
+
+  BackendListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref BackendTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /api/*
+      ListenerArn: !Ref ALBListener
+      Priority: 1
+
+  # Backend rule for HTTPS listener (if SSL enabled)
+  BackendListenerRuleHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: CreateSSL
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref BackendTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /api/*
+      ListenerArn: !Ref ALBListenerHTTPS
+      Priority: 1
+
+  # Launch Template
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${AWS::StackName}-lt
+      LaunchTemplateData:
+        ImageId: !Sub '{{resolve:ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id}}'
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        IamInstanceProfile:
+          Arn: !GetAtt EC2InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 30
+              VolumeType: gp3
+              DeleteOnTermination: true
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -e
+            
+            # Update system
+            apt-get update
+            apt-get upgrade -y
+            
+            # Install CloudFormation helper scripts first
+            apt-get install -y python3-pip curl
+            pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+            # Create symlink for cfn-signal
+            ln -sf /usr/local/bin/cfn-signal /opt/aws/bin/cfn-signal || mkdir -p /opt/aws/bin && ln -sf /usr/local/bin/cfn-signal /opt/aws/bin/cfn-signal
+            
+            # Install dependencies
+            apt-get install -y docker.io awscli jq
+            systemctl enable docker
+            systemctl start docker
+            usermod -aG docker ubuntu
+            
+            # Install Docker Compose v2
+            curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            chmod +x /usr/local/bin/docker-compose
+            
+            # Get secrets from Secrets Manager
+            export AWS_DEFAULT_REGION=${AWS::Region}
+            DB_SECRET=$(aws secretsmanager get-secret-value --secret-id ${DBSecret} --query SecretString --output text)
+            JWT_SECRET=$(aws secretsmanager get-secret-value --secret-id ${JWTSecret} --query SecretString --output text)
+            OAUTH_SECRET=$(aws secretsmanager get-secret-value --secret-id ${GoogleOAuthSecret} --query SecretString --output text)
+            
+            DB_CONNECTION=$(echo $DB_SECRET | jq -r .connection_string)
+            JWT_KEY=$(echo $JWT_SECRET | jq -r .secret_key)
+            GOOGLE_CLIENT_ID=$(echo $OAUTH_SECRET | jq -r .client_id)
+            GOOGLE_CLIENT_SECRET=$(echo $OAUTH_SECRET | jq -r .client_secret)
+            
+            # Get ALB DNS name
+            ALB_DNS="${ApplicationLoadBalancer.DNSName}"
+            
+            # Export variables for docker-compose
+            export DB_CONNECTION
+            export JWT_KEY
+            export GOOGLE_CLIENT_ID
+            export GOOGLE_CLIENT_SECRET
+            export ALB_DNS
+            
+            # Create app directory
+            mkdir -p /opt/rampart
+            cd /opt/rampart
+            
+            # Create docker-compose.yml
+            cat > docker-compose.yml << 'COMPOSE_EOF'
+            version: '3.8'
+            
+            services:
+              backend:
+                image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/rampart-backend:latest
+                container_name: rampart-backend
+                environment:
+                  - DATABASE_URL=${!DB_CONNECTION}
+                  - JWT_SECRET_KEY=${!JWT_KEY}
+                  - JWT_ALGORITHM=HS256
+                  - JWT_EXPIRATION_MINUTES=1440
+                  - GOOGLE_CLIENT_ID=${!GOOGLE_CLIENT_ID}
+                  - GOOGLE_CLIENT_SECRET=${!GOOGLE_CLIENT_SECRET}
+                  - GOOGLE_REDIRECT_URI=https://${DomainName}/api/v1/auth/callback/google
+                  - FRONTEND_URL=https://${DomainName}
+                  - CORS_ORIGINS=https://${DomainName}
+                  - ENVIRONMENT=production
+                  - SECRET_KEY=${!JWT_KEY}
+                  - KEY_ENCRYPTION_SECRET=${!JWT_KEY}
+                ports:
+                  - "8000:8000"
+                restart: unless-stopped
+                healthcheck:
+                  test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+            
+              frontend:
+                image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/rampart-frontend:latest
+                container_name: rampart-frontend
+                environment:
+                  - NEXT_PUBLIC_API_URL=https://${DomainName}/api/v1
+                ports:
+                  - "3000:3000"
+                restart: unless-stopped
+                depends_on:
+                  - backend
+            COMPOSE_EOF
+            
+            # Login to ECR and pull images
+            echo "Logging into ECR..."
+            if ! aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com; then
+              echo "ERROR: Failed to login to ECR"
+              /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+              exit 1
+            fi
+            
+            # Pull images to verify they exist
+            echo "Pulling Docker images..."
+            if ! docker pull ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/rampart-backend:latest || \
+               ! docker pull ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/rampart-frontend:latest; then
+              echo "ERROR: Failed to pull Docker images"
+              /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+              exit 1
+            fi
+            
+            # Start services
+            echo "Starting Docker services..."
+            if docker-compose up -d; then
+              echo "Services started successfully"
+              sleep 30
+              # Signal success
+              /opt/aws/bin/cfn-signal -e 0 --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+            else
+              echo "ERROR: Failed to start services"
+              /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+            fi
+
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-asg
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: 1
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      TargetGroupARNs:
+        - !Ref FrontendTargetGroup
+        - !Ref BackendTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-instance
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT15M
+
+  # CloudWatch Alarms
+  HighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alert when CPU exceeds 80%
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroup
+
+Outputs:
+  LoadBalancerURL:
+    Description: Application Load Balancer URL
+    Value: !Sub http://${ApplicationLoadBalancer.DNSName}
+    Export:
+      Name: !Sub ${AWS::StackName}-alb-url
+
+  FrontendURL:
+    Description: Frontend Application URL
+    Value: !Sub http://${ApplicationLoadBalancer.DNSName}
+
+  BackendAPIURL:
+    Description: Backend API URL
+    Value: !Sub http://${ApplicationLoadBalancer.DNSName}/api/v1
+
+  RDSEndpoint:
+    Description: RDS PostgreSQL Endpoint
+    Value: !GetAtt RDSInstance.Endpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-rds-endpoint
+
+  DBSecretArn:
+    Description: Database secret ARN
+    Value: !Ref DBSecret

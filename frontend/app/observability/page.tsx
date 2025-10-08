@@ -31,7 +31,7 @@ function ObservabilityPageContent() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 p-6">
       {/* Header */}
       <header className="border-b bg-white">
         <div className="container mx-auto px-6 py-4">

@@ -14,7 +14,8 @@ from api.db import init_defaults_table, init_all_tables
 from api.middleware import (
     SecurityHeadersMiddleware,
     RateLimitMiddleware,
-    RequestSizeLimitMiddleware
+    RequestSizeLimitMiddleware,
+    APIKeyEnforcementMiddleware
 )
 
 # OpenTelemetry setup (safe if not available)
@@ -92,6 +93,9 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="AI Security & Observability Platform",
+    docs_url=f"{settings.api_prefix}/docs",
+    redoc_url=f"{settings.api_prefix}/redoc",
+    openapi_url=f"{settings.api_prefix}/openapi.json",
     lifespan=lifespan
 )
 
@@ -106,8 +110,11 @@ app.add_middleware(
     requests_per_hour=settings.rate_limit_per_hour
 )
 
-# 3. Security headers
-app.add_middleware(SecurityHeadersMiddleware)
+# 3. API Key/JWT enforcement (before security headers so auth errors are properly formatted)
+app.add_middleware(APIKeyEnforcementMiddleware)
+
+# 4. Security headers (pass CORS origins for CSP)
+app.add_middleware(SecurityHeadersMiddleware, cors_origins=settings.cors_origins)
 
 # 4. CORS middleware
 # Parse comma-separated origins from config
@@ -192,7 +199,7 @@ async def root():
         "name": settings.app_name,
         "version": settings.app_version,
         "status": "operational",
-        "docs": "/docs"
+        "docs": f"{settings.api_prefix}/docs"
     }
 
 

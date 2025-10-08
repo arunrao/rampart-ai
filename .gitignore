@@ -28,6 +28,7 @@ ENV/
 .env
 .env.local
 .env.*.local
+aws/.env
 
 # IDEs
 .vscode/
