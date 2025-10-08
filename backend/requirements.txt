@@ -30,6 +30,7 @@ transformers>=4.35.0             # Hugging Face transformers (for DeBERTa)
 torch>=2.0.0                     # PyTorch (GLiNER dependency)
 optimum[onnxruntime]>=1.16.0     # ONNX optimization for transformers
 sentencepiece>=0.1.99            # Tokenizer for DeBERTa
+accelerate>=0.20.0               # Required for transformers model loading
 
 # Optional: Microsoft Presidio for PII (advanced)
 # presidio-analyzer>=2.2.0
