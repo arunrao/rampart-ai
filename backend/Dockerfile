@@ -22,10 +22,20 @@ COPY . .
 # Create model cache directory
 RUN mkdir -p /app/.cache/huggingface
 
-# GLiNER model warmup (optional: pre-download models to speed up first run)
+# Model warmup (optional: pre-download models to speed up first run)
+# GLiNER model warmup (~200MB)
 # Uncomment to pre-download the default "balanced" model during build
-# This adds ~200MB to image size but eliminates first-run download
 # RUN python -c "from models.pii_detector_gliner import get_gliner_detector; get_gliner_detector(model_type='balanced').detect('warmup')" || true
+
+# DeBERTa model warmup (~300MB with ONNX)
+# Pre-downloads ProtectAI DeBERTa model for prompt injection detection
+# This adds ~300MB to image size but eliminates first-run download (3-5s cold start)
+# Recommended for production environments
+RUN python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
+    model_name = 'protectai/deberta-v3-base-prompt-injection-v2'; \
+    AutoTokenizer.from_pretrained(model_name); \
+    AutoModelForSequenceClassification.from_pretrained(model_name); \
+    print('✓ DeBERTa model pre-downloaded')" || echo "⚠ DeBERTa pre-download skipped (will download on first use)"
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash app \

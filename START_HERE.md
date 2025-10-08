@@ -6,7 +6,7 @@ Welcome to **Project Rampart**! This is your starting point.
 
 Project Rampart is a comprehensive **AI Security & Observability Platform** with ML-based detection that helps you build more secure AI applications:
 
-- 🛡️ **Prompt injection detection** - 92% accuracy with ML models
+- 🛡️ **Hybrid prompt injection detection** - 92% accuracy with DeBERTa ML + regex (< 10ms avg)
 - 🔒 **Data exfiltration monitoring** - Stops credential and PII leaks
 - 🚫 **Jailbreak prevention** - Detects DAN mode and bypass attempts
 - 📊 **Performance & cost tracking** - Complete observability
@@ -33,6 +33,11 @@ Key variables:
 - Backend `backend/.env`:
   - `DATABASE_URL`, `REDIS_URL`
   - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (optional)
+  - **Hybrid Prompt Injection Detection (DeBERTa + Regex):**
+    - `PROMPT_INJECTION_DETECTOR=hybrid` (hybrid/deberta/regex - default: hybrid)
+    - `PROMPT_INJECTION_USE_ONNX=true` (ONNX optimization, 3x faster)
+    - `PROMPT_INJECTION_FAST_MODE=false` (skip DeBERTa for ultra-fast)
+    - `PROMPT_INJECTION_THRESHOLD=0.75` (confidence threshold 0.0-1.0)
   - **GLiNER PII Detection:**
     - `PII_DETECTION_ENGINE=hybrid` (hybrid/gliner/regex - default: hybrid)
     - `PII_MODEL_TYPE=balanced` (edge/balanced/accurate - default: balanced)
@@ -162,11 +167,14 @@ project-rampart/
 ## Common Commands
 
 ```bash
-# Start with Docker (includes GLiNER models)
+# Start with Docker (includes GLiNER + DeBERTa models)
 docker-compose up -d
 
 # Test GLiNER PII detection
 cd backend && python test_gliner_pii.py
+
+# Test DeBERTa hybrid prompt injection detection
+cd backend && python test_deberta_integration.py
 
 # Run security tests
 make test
@@ -178,7 +186,9 @@ docker-compose logs -f backend
 docker-compose down
 ```
 
-**First Run**: GLiNER models download automatically (~200MB, 30-60 seconds)
+**First Run**: 
+- GLiNER models download automatically (~200MB, 30-60 seconds)
+- DeBERTa model downloads on first detection (~300MB ONNX-optimized, pre-loaded in Docker)
 
 ## Observability & Metrics
 

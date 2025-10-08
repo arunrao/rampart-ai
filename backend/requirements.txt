@@ -26,8 +26,10 @@ httpx==0.26.0
 # ML Models for Security
 gliner>=0.2.0                    # GLiNER for PII detection
 onnxruntime>=1.16.0              # ONNX runtime for optimized inference
-transformers>=4.35.0             # Hugging Face transformers (for DeBERTa, future)
+transformers>=4.35.0             # Hugging Face transformers (for DeBERTa)
 torch>=2.0.0                     # PyTorch (GLiNER dependency)
+optimum[onnxruntime]>=1.16.0     # ONNX optimization for transformers
+sentencepiece>=0.1.99            # Tokenizer for DeBERTa
 
 # Optional: Microsoft Presidio for PII (advanced)
 # presidio-analyzer>=2.2.0

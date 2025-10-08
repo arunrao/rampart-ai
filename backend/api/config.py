@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     enable_toxicity_detection: bool = True
     toxicity_threshold: float = 0.7
     
+    # Prompt Injection Detection
+    prompt_injection_detector: str = "hybrid"  # hybrid, deberta, regex
+    prompt_injection_use_onnx: bool = True  # Use ONNX optimization for 3x faster inference
+    prompt_injection_fast_mode: bool = False  # Skip DeBERTa for low-latency
+    prompt_injection_threshold: float = 0.75  # Confidence threshold for blocking
+    
     # Observability
     enable_tracing: bool = True
     enable_metrics: bool = True

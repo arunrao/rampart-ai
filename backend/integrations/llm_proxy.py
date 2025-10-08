@@ -1,6 +1,12 @@
 """
 LLM Proxy with Security and Observability
 Wraps LLM API calls with security checks and tracing
+
+Features:
+- Hybrid prompt injection detection (regex + DeBERTa)
+- Configurable detection modes for performance tuning
+- Data exfiltration monitoring
+- Cost tracking and observability
 """
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -8,24 +14,60 @@ import time
 import asyncio
 import os
 from uuid import UUID, uuid4
+import logging
 
-from models.prompt_injection_detector import PromptInjectionDetector
+from models.prompt_injection_detector import get_prompt_injection_detector
 from security.data_exfiltration_monitor import DataExfiltrationMonitor
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProxy:
     """
     Proxy for LLM API calls with integrated security and observability
+    
+    Features:
+    - Hybrid prompt injection detection (regex + DeBERTa)
+    - Configurable performance modes
+    - Data exfiltration monitoring
+    - Cost tracking
     """
     
-    def __init__(self, provider: str = "openai"):
+    def __init__(
+        self,
+        provider: str = "openai",
+        detector_type: str = None,
+        use_onnx: bool = True,
+        fast_mode: bool = False
+    ):
+        """
+        Initialize LLM Proxy
+        
+        Args:
+            provider: LLM provider (openai, anthropic, etc.)
+            detector_type: Detection type - "regex", "deberta", or "hybrid" (default)
+            use_onnx: Use ONNX optimization for DeBERTa (3x faster)
+            fast_mode: Skip DeBERTa for low-latency scenarios
+        """
         self.provider = provider
-        self.injection_detector = PromptInjectionDetector()
+        self.fast_mode = fast_mode
+        
+        # Get detector from environment or use default
+        detector_type = detector_type or os.getenv("PROMPT_INJECTION_DETECTOR", "hybrid")
+        
+        # Initialize hybrid detector with configuration
+        self.injection_detector = get_prompt_injection_detector(
+            detector_type=detector_type,
+            use_onnx=use_onnx
+        )
+        
         self.exfiltration_monitor = DataExfiltrationMonitor()
         
         # Initialize provider clients
         self.clients = {}
         self._init_clients()
+        
+        logger.info(f"✓ LLM Proxy initialized (detector={detector_type}, fast_mode={fast_mode})")
     
     def _init_clients(self):
         """Initialize LLM provider clients"""
@@ -114,31 +156,59 @@ class LLMProxy:
         return result
     
     async def _check_input_security(self, messages: List[Dict[str, str]]) -> Dict:
-        """Check input messages for security issues"""
+        """
+        Check input messages for security issues with hybrid detection
+        
+        Uses regex + DeBERTa for high accuracy, with configurable fast mode.
+        """
         security_result = {
             "blocked": False,
             "issues": [],
-            "risk_score": 0.0
+            "risk_score": 0.0,
+            "detector_used": "unknown",
+            "detection_latency_ms": 0.0
         }
         
         # Check each message for prompt injection
         for msg in messages:
             if msg["role"] == "user":
-                injection_result = self.injection_detector.detect(msg["content"])
+                # Use hybrid detector with fast_mode setting
+                injection_result = self.injection_detector.detect(
+                    msg["content"],
+                    fast_mode=self.fast_mode
+                )
                 
-                if injection_result["is_injection"]:
+                # Get risk score from appropriate field
+                risk_score = injection_result.get("confidence", 
+                                                 injection_result.get("risk_score", 0.0))
+                
+                is_injection = injection_result.get("is_injection", False)
+                
+                if is_injection:
+                    # Extract details based on detector type
+                    details = {}
+                    if "detected_patterns" in injection_result:
+                        details["patterns"] = injection_result["detected_patterns"]
+                    if "detection_details" in injection_result:
+                        details["breakdown"] = injection_result["detection_details"]
+                    
                     security_result["issues"].append({
                         "type": "prompt_injection",
-                        "severity": injection_result["risk_score"],
-                        "details": injection_result["detected_patterns"]
+                        "severity": risk_score,
+                        "details": details,
+                        "recommendation": injection_result.get("recommendation", "BLOCK")
                     })
                     security_result["risk_score"] = max(
                         security_result["risk_score"],
-                        injection_result["risk_score"]
+                        risk_score
                     )
+                
+                # Track detector performance
+                security_result["detector_used"] = injection_result.get("detector", "unknown")
+                security_result["detection_latency_ms"] = injection_result.get("latency_ms", 0.0)
         
-        # Block if high risk
-        if security_result["risk_score"] >= 0.8:
+        # Block if high risk (threshold at 0.75 for hybrid detector)
+        if security_result["risk_score"] >= 0.75:
             security_result["blocked"] = True
         
         return security_result
