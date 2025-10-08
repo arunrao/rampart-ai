@@ -291,31 +291,42 @@ This project is inspired by research from:
 
 ## Roadmap
 
-### Phase 1: MVP (Current)
+### Phase 1: Core Platform
 - ✅ Core security detection (prompt injection, data exfiltration)
 - ✅ Basic observability (traces, spans, metrics)
 - ✅ Content filtering (PII, toxicity)
 - ✅ Policy management
 - ✅ Web dashboard
 
-### Phase 2: Enhanced Detection (Next)
-- ML-based detection models
-- Advanced pattern recognition
-- Semantic analysis
-- Anomaly detection
+### Phase 2: Enhanced Detection & Performance
+- [ ] ML-based detection models (BERT/RoBERTa for semantic understanding)
+- [ ] Advanced pattern recognition and adaptive learning
+- [ ] Intelligent query routing (40-50% cost reduction target)
+- [ ] Semantic caching layer (60-80% cache hit rate target)
+- [ ] Real-time streaming support
+- [ ] Behavioral anomaly detection
 
-### Phase 3: Enterprise Features
-- Multi-tenancy
-- Advanced RBAC
-- SSO integration
-- Custom ML model training
-- Alert routing (Slack, PagerDuty)
+### Phase 3: Agentic AI Security
+- [ ] Memory poisoning protection
+- [ ] Tool authorization framework
+- [ ] Goal manipulation detection
+- [ ] Multi-agent coordination security
+- [ ] Autonomous decision auditing
 
-### Phase 4: Advanced Analytics
-- Predictive analytics
-- Automated remediation
-- Compliance reporting
-- Cost optimization recommendations
+### Phase 4: Enterprise Features
+- [ ] Multi-tenancy with tenant isolation
+- [ ] Advanced RBAC and delegation
+- [ ] SSO integration (Okta, Auth0, Azure AD)
+- [ ] Custom ML model training
+- [ ] Alert routing (Slack, PagerDuty, webhooks)
+- [ ] Automated remediation and self-healing
+
+### Phase 5: Advanced Analytics & Governance
+- [ ] Predictive analytics for security incidents
+- [ ] AI-powered cost optimization
+- [ ] Automated compliance reporting
+- [ ] Cryptographic trust layer (research)
+- [ ] Zero-knowledge proofs for privacy
 
 ## Performance
 

@@ -1014,25 +1014,41 @@ Rampart currently focuses on **securing LLM API interactions** - the request/res
 **Goal**: Improve detection accuracy and production readiness
 
 - [ ] **ML-based prompt injection detection**
-  - Fine-tuned BERT/RoBERTa models
-  - Semantic analysis beyond pattern matching
+  - Fine-tuned BERT/RoBERTa models for semantic understanding
+  - Move beyond regex patterns to semantic analysis
   - Adaptive learning from security incidents
+  - Target: 90%+ detection accuracy with <10% false positive rate
 
 - [ ] **Real-time streaming support**
   - Incremental security checks on streaming responses
   - Token-by-token analysis for early threat detection
   - Graceful stream interruption on security violations
+  - Enable real-time chatbots and assistants
+
+- [ ] **Intelligent query routing**
+  - Semantic classification to route queries by complexity and intent
+  - Auto-select optimal models (cost/speed/accuracy tradeoff)
+  - Target: 40-50% cost reduction, 30-40% latency reduction
+  - Support for specialized model routing (code, creative, reasoning)
+
+- [ ] **Semantic caching layer**
+  - Cache responses for semantically similar queries
+  - Embedding-based similarity matching
+  - Target: 60-80% cache hit rate for common queries
+  - Significant cost and latency reduction
 
 - [ ] **Advanced anomaly detection**
-  - Behavioral analysis of user patterns
+  - Behavioral analysis of user patterns using ML
   - Cost anomaly detection (unusual token usage)
   - Geographic and temporal anomaly detection
+  - Multi-step attack chain detection
 
 - [ ] **Production integrations**
   - Integration hub for LangChain, LlamaIndex, Haystack
   - Alert routing (Slack, PagerDuty, email, webhooks)
   - Compliance report generation (automated audits)
   - SIEM integration (Splunk, Datadog, Elastic)
+  - Real-time threat intelligence feed
 
 ---
 
@@ -1151,14 +1167,14 @@ Agent C: Relies on Agent B's assessments, also compromised
 
 ---
 
-### Phase 3: Cryptographic Trust Layer
+### Phase 3: Cryptographic Trust Layer (Research & Innovation)
 **Goal**: Shift from reactive detection to proactive prevention with cryptographic verification
 
 Inspired by how TLS/SSL transformed web security, we're exploring a **cryptographic trust layer** for AI agents.
 
 **Core Concept**: "Prove before execute" instead of "detect and respond"
 
-**Planned Architecture**:
+**Research Areas**:
 - [ ] Cryptographically signed tool invocations
 - [ ] Verifiable agent workflows (like code signing for agent actions)
 - [ ] Zero-knowledge proofs for privacy-preserving verification
@@ -1186,17 +1202,18 @@ Inspired by how TLS/SSL transformed web security, we're exploring a **cryptograp
 
 ---
 
-### Phase 4: Enterprise Agentic Platform
-**Goal**: Complete enterprise-grade agentic AI security platform
+### Phase 4: Enterprise Platform Features
+**Goal**: Enterprise-grade platform capabilities and governance
 
-- [ ] Multi-tenancy with tenant isolation
-- [ ] Advanced RBAC for agent permissions
-- [ ] SSO integration (Okta, Auth0, Azure AD)
+- [ ] Multi-tenancy with strong tenant isolation
+- [ ] Advanced RBAC for agent permissions and delegation
+- [ ] SSO integration (Okta, Auth0, Azure AD, SAML)
 - [ ] Custom ML model training for organization-specific threats
-- [ ] Automated remediation and self-healing
-- [ ] Cost optimization recommendations
+- [ ] Automated remediation and self-healing policies
+- [ ] AI-powered cost optimization recommendations
 - [ ] Predictive analytics for security incidents
 - [ ] Compliance automation (SOC 2, ISO 27001, NIST AI RMF)
+- [ ] Custom deployment topologies (edge, hybrid, air-gapped)
 
 ---
 
