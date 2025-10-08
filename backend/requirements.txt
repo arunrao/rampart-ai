@@ -27,7 +27,7 @@ httpx==0.26.0
 gliner>=0.2.0                    # GLiNER for PII detection
 onnxruntime>=1.16.0              # ONNX runtime for optimized inference
 transformers>=4.35.0             # Hugging Face transformers (for DeBERTa)
-torch>=2.0.0                     # PyTorch (GLiNER dependency)
+# torch>=2.0.0                   # Installed separately via CPU-only index in Dockerfile (saves 3GB)
 optimum[onnxruntime]>=1.16.0     # ONNX optimization for transformers
 sentencepiece>=0.1.99            # Tokenizer for DeBERTa
 accelerate>=0.20.0               # Required for transformers model loading

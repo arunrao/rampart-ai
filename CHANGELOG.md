@@ -5,6 +5,49 @@ All notable changes to Project Rampart will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-10-08
+
+### Changed
+
+#### Docker Image Optimizations
+- **Backend Image Size Reduction: 9.35GB → 3.37GB** (64% reduction, -6GB)
+  - Switched to CPU-only PyTorch (excluding CUDA libraries saves ~3GB)
+  - Optimized for CPU deployment on AWS EC2 instances
+  - PyTorch installed via CPU-specific index: `torch --index-url https://download.pytorch.org/whl/cpu`
+  - Compressed ECR image: 1.79GB
+
+- **Frontend Image Size Reduction: 1.22GB → 168MB** (86% reduction, -1.05GB)
+  - Implemented multi-stage Docker build
+  - Enabled Next.js standalone output mode
+  - Production-only dependencies in final image
+  - Removed 648MB of dev dependencies
+  - Compressed ECR image: 50MB
+
+- **ML Model Warmup Optimizations**
+  - Added `force_deberta=True` flag to ensure DeBERTa loads during startup
+  - Fixed hybrid detector warmup to trigger actual model loading
+  - Eliminated 17-second first-request delay
+  - Both DeBERTa and GLiNER now preload on startup (~12 seconds warmup)
+  - Fixed regex pattern for "ignore all previous instructions" detection
+
+- **ONNX Optimization Improvements**
+  - Changed from `export=True` to `export=False` for cached ONNX models
+  - Eliminated redundant ONNX re-export on every startup (saves ~10 seconds)
+  - Suppressed PyTorch ONNX warnings (`scaled_dot_product_attention`)
+  - Faster model loading from cache (~2 seconds vs ~12 seconds)
+
+#### Infrastructure & Deployment
+- **ECR Cleanup**: Removed 25+ untagged Docker images from ECR repositories
+- **Docker Compose**: Updated to production mode (removed dev volume mounts)
+- **AWS Deployment**: Optimized images now deployed via `aws/deploy.sh`
+- **Total Deployment Size**: 3.54GB → 218MB compressed in ECR (90% reduction)
+
+### Performance
+- **Startup time**: DeBERTa model loads in ~12 seconds (one-time on startup)
+- **First request**: No cold start delay (was 17 seconds, now <100ms)
+- **Image pull time**: ~70% faster due to smaller compressed images
+- **Disk space savings**: 7GB per local build, significant ECR storage reduction
+
 ## [0.2.0] - 2025-10-08
 
 ### Added

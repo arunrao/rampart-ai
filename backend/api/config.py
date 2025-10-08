@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     
     # Application
     app_name: str = "Project Rampart"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.1"
     environment: str = "development"
     debug: bool = True
     secret_key: str

@@ -1,6 +1,6 @@
 # Project Rampart 🛡️
 
-**AI Security & Observability Platform**
+**AI Security & Observability Platform** | v0.2.1
 
 ## Executive Summary
 
@@ -605,6 +605,9 @@ Rampart detects and mitigates **50+ specific attack behaviors** across input val
 ### Quick Start (Development)
 
 **Using Docker Compose (Recommended):**
+
+> **🚀 v0.2.1 Docker Optimizations:** Backend image reduced 64% (9.35GB → 3.37GB) with CPU-only PyTorch. Frontend reduced 86% (1.22GB → 168MB) with multi-stage build. Both ML models (DeBERTa + GLiNER) now warmup on startup - no cold start delays!
+
 ```bash
 # Generate secrets
 export SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
