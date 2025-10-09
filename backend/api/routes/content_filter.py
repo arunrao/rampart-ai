@@ -17,6 +17,9 @@ from api.routes.auth import get_current_user, TokenData
 from api.routes.security import get_authenticated_user
 from api.routes.rampart_keys import track_api_key_usage
 
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
 # Import GLiNER detector
 try:
     from models.pii_detector_gliner import detect_pii_gliner, redact_pii_gliner, PIIEntity as GLiNERPIIEntity
@@ -29,12 +32,11 @@ except ImportError:
 try:
     from api.routes.security import get_detector
     PROMPT_INJECTION_AVAILABLE = True
-except ImportError:
+    logger.info("✓ Prompt injection detector imported successfully")
+except ImportError as e:
     PROMPT_INJECTION_AVAILABLE = False
     get_detector = None
-
-router = APIRouter()
-logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ Prompt injection detector not available: {e}")
 
 # Configuration
 PII_DETECTION_ENGINE = os.getenv("PII_DETECTION_ENGINE", "hybrid")  # hybrid, gliner, regex, presidio
@@ -690,7 +692,13 @@ async def filter_content(
                 if PROMPT_INJECTION_AVAILABLE and get_detector is not None:
                     try:
                         detector = get_detector()
+                        if detector is None:
+                            logger.error("Detector is None after get_detector() call")
+                            raise ValueError("Detector not initialized")
+                        
+                        logger.debug(f"Calling detector.detect() with content length: {len(request.content)}")
                         detection_result = detector.detect(request.content)
+                        logger.debug(f"Detection result: {detection_result}")
                         
                         # Extract relevant info for response
                         prompt_injection_result = PromptInjectionResult(
@@ -703,6 +711,8 @@ async def filter_content(
                             ] if "regex_results" in detection_result else []
                         )
                         
+                        logger.info(f"Prompt injection check: is_injection={prompt_injection_result.is_injection}, confidence={prompt_injection_result.confidence}")
+                        
                         if _OTEL and pispan is not None:
                             try:
                                 pispan.set_attribute("injection.detected", bool(detection_result["is_injection"]))
@@ -710,9 +720,25 @@ async def filter_content(
                             except Exception:
                                 pass
                     except Exception as e:
-                        logger.error(f"Prompt injection detection failed: {e}")
-                        # Don't fail the entire request, just skip this check
-                        pass
+                        logger.error(f"Prompt injection detection failed: {e}", exc_info=True)
+                        # Return a safe default response so the API doesn't break
+                        prompt_injection_result = PromptInjectionResult(
+                            is_injection=False,
+                            confidence=0.0,
+                            risk_score=0.0,
+                            recommendation="ERROR - Detection unavailable",
+                            patterns_matched=[]
+                        )
+                else:
+                    logger.warning(f"Prompt injection detector not available. AVAILABLE={PROMPT_INJECTION_AVAILABLE}, get_detector={get_detector}")
+                    # Return a default response indicating detector is unavailable
+                    prompt_injection_result = PromptInjectionResult(
+                        is_injection=False,
+                        confidence=0.0,
+                        risk_score=0.0,
+                        recommendation="UNAVAILABLE - Detector not loaded",
+                        patterns_matched=[]
+                    )
 
         # Determine if content is safe
         is_safe = True

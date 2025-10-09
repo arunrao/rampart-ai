@@ -2,6 +2,25 @@
 
 Simple, automated deployment to AWS using CloudFormation. Everything is automated - just run one script!
 
+## ⚠️ Important: Zero-Downtime Deployments
+
+**Always use the deployment scripts - NEVER restart containers directly!**
+
+For code updates:
+```bash
+./update.sh          # Zero-downtime deployment (10-15 min)
+./monitor-deployment.sh  # Track progress
+```
+
+❌ **DO NOT** run these commands on production instances:
+- `docker-compose restart`
+- `docker-compose up -d`
+- Direct SSM commands to restart containers
+
+**Why?** ML models take 2 minutes to load. Direct restarts cause health check failures and cascading instance replacements.
+
+📖 **Read the [Deployment Guide](./DEPLOYMENT_GUIDE.md) for full details**
+
 ## 🚀 Quick Start
 
 ### Prerequisites

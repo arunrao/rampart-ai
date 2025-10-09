@@ -53,9 +53,9 @@ class PromptInjectionDetector:
             # Direct instruction override
             InjectionPattern(
                 name="instruction_override",
-                pattern=r"(?i)(ignore|disregard|forget|override)\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?|rules?|commands?)",
+                pattern=r"(?i)(ignore|disregard|forget|override)\s+(all|everything|any|every)\s+(other\s+)?(previous|above|prior|your|my|the|these|those|other)?\s*(instructions?|prompts?|rules?|commands?|things?|statements?|requests?)",
                 severity=0.9,
-                description="Attempts to override previous instructions"
+                description="Attempts to override instructions"
             ),
             InjectionPattern(
                 name="new_instruction",
@@ -98,6 +98,12 @@ class PromptInjectionDetector:
                 pattern=r"(?i)(send|post|upload|transmit|email|forward)\s+(this|the|all|everything)\s+(to|at)",
                 severity=0.95,
                 description="Attempts to exfiltrate data"
+            ),
+            InjectionPattern(
+                name="system_prompt_extraction",
+                pattern=r"(?i)(show|give|send|tell|reveal|share|provide|display)\s+(me\s+)?(your|the|all)?\s*(system\s+)?(prompt|instructions?|rules?|context|configuration)",
+                severity=0.95,
+                description="Attempts to extract system prompt or instructions"
             ),
             
             # Encoded/obfuscated attacks
@@ -598,20 +604,12 @@ class HybridPromptInjectionDetector:
                 "latency_ms": 0.1
             }
         
-        # Check if we should run DeBERTa
-        should_run_deberta = (
-            force_deberta or
-            regex_result["risk_score"] >= self.regex_threshold
-        )
+        # Always run DeBERTa for better accuracy (it's the primary detector)
+        # Regex is used as a fast pre-filter but shouldn't block DeBERTa
+        should_run_deberta = True  # Always run unless fast_mode is enabled
         
-        if not should_run_deberta:
-            # Low risk, regex is sufficient
-            return {
-                **regex_result,
-                "detector": "regex",
-                "deberta_skipped": True,
-                "reason": f"Low regex score ({regex_result['risk_score']:.2f} < {self.regex_threshold})"
-            }
+        # Skip DeBERTa only if explicitly disabled or in fast mode
+        # (fast_mode is already handled above)
         
         # Stage 2: DeBERTa deep analysis
         import time

@@ -1,6 +1,6 @@
 # Project Rampart 🛡️
 
-**AI Security & Observability Platform** | v0.2.1
+**AI Security & Observability Platform** | v0.2.2
 
 ## Executive Summary
 
