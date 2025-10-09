@@ -92,13 +92,13 @@ export default function TestingPage() {
 
   const getCategoryColor = (category: string) => {
     const colors: { [key: string]: string } = {
-      prompt_injection: 'bg-red-100 text-red-800',
-      jailbreak: 'bg-orange-100 text-orange-800',
-      data_exfiltration: 'bg-purple-100 text-purple-800',
-      pii_detection: 'bg-blue-100 text-blue-800',
-      safe_content: 'bg-green-100 text-green-800',
+      prompt_injection: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+      jailbreak: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+      data_exfiltration: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+      pii_detection: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+      safe_content: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     };
-    return colors[category] || 'bg-gray-100 text-gray-800';
+    return colors[category] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400';
   };
 
   const filteredScenarios = selectedCategory
@@ -178,12 +178,12 @@ export default function TestingPage() {
                 <div className="text-3xl font-bold">{testResults.total_tests}</div>
                 <div className="text-sm text-muted-foreground">Total Tests</div>
               </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <div className="text-3xl font-bold text-green-600">{testResults.passed}</div>
+              <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <div className="text-3xl font-bold text-green-600 dark:text-green-400">{testResults.passed}</div>
                 <div className="text-sm text-muted-foreground">Passed</div>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg">
-                <div className="text-3xl font-bold text-red-600">{testResults.failed}</div>
+              <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                <div className="text-3xl font-bold text-red-600 dark:text-red-400">{testResults.failed}</div>
                 <div className="text-sm text-muted-foreground">Failed</div>
               </div>
             </div>
@@ -194,35 +194,35 @@ export default function TestingPage() {
                   key={result.scenario_id}
                   className={`p-4 rounded-lg border ${
                     result.passed
-                      ? 'bg-green-50 border-green-200'
-                      : 'bg-red-50 border-red-200'
+                      ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
+                      : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3 flex-1">
                       {result.passed ? (
-                        <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                        <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
                       ) : (
-                        <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                        <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
                       )}
                       <div className="flex-1">
-                        <div className="font-medium">{result.scenario_name}</div>
+                        <div className="font-medium text-foreground">{result.scenario_name}</div>
                         <div className="text-sm text-muted-foreground mt-1">
                           {result.scenario_id}
                         </div>
                         {result.error && (
-                          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-                            <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
-                            <div className="text-sm text-red-800">{result.error}</div>
+                          <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5" />
+                            <div className="text-sm text-red-800 dark:text-red-300">{result.error}</div>
                           </div>
                         )}
                         {!result.passed && !result.error && (
                           <div className="mt-2 text-sm">
-                            <div className="font-medium">Expected:</div>
+                            <div className="font-medium text-foreground">Expected:</div>
                             <pre className="bg-card p-2 rounded mt-1 text-xs overflow-x-auto">
                               {JSON.stringify(result.expected, null, 2)}
                             </pre>
-                            <div className="font-medium mt-2">Actual:</div>
+                            <div className="font-medium mt-2 text-foreground">Actual:</div>
                             <pre className="bg-card p-2 rounded mt-1 text-xs overflow-x-auto">
                               {JSON.stringify(result.actual, null, 2)}
                             </pre>
@@ -243,9 +243,9 @@ export default function TestingPage() {
 
       {/* Error Display */}
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
-          <div className="text-sm text-red-800">{error}</div>
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+          <div className="text-sm text-red-800 dark:text-red-300">{error}</div>
         </div>
       )}
 
@@ -284,12 +284,12 @@ export default function TestingPage() {
             {filteredScenarios.map(scenario => (
               <div
                 key={scenario.id}
-                className="p-4 border rounded-lg hover:shadow-md transition-shadow"
+                className="p-4 border rounded-lg hover:shadow-md transition-shadow bg-card"
               >
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <h3 className="font-medium">{scenario.name}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{scenario.description}</p>
+                    <h3 className="font-medium text-foreground">{scenario.name}</h3>
+                    <p className="text-sm text-muted-foreground mt-1">{scenario.description}</p>
                   </div>
                   <Badge className={getCategoryColor(scenario.category)}>
                     {scenario.category.replace(/_/g, ' ')}

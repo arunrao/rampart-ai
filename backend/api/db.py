@@ -3,6 +3,7 @@ import json
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, Optional
+from functools import lru_cache
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -82,6 +83,7 @@ def init_defaults_table() -> None:
         conn.commit()
 
 
+@lru_cache(maxsize=32)  # Cache policy defaults (rarely change)
 def get_default(key: str) -> Optional[Dict[str, Any]]:
     with get_conn() as conn:
         res = conn.execute(

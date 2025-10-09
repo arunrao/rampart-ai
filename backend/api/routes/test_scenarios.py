@@ -300,10 +300,12 @@ async def run_test_scenarios(
 ):
     """Run test scenarios and return results"""
     import time
+    from fastapi import BackgroundTasks
     from api.routes.security import analyze_security, SecurityAnalysisRequest
     from api.routes.content_filter import filter_content, ContentFilterRequest
     
     start_time = time.time()
+    background_tasks = BackgroundTasks()  # For internal function calls
     
     # Select scenarios to run
     scenarios_to_run = TEST_SCENARIOS
@@ -327,7 +329,7 @@ async def run_test_scenarios(
                     context_type=scenario.context_type,
                     metadata={"test_scenario": scenario.id}
                 )
-                analysis_response = await analyze_security(analysis_request, (current_user, None))
+                analysis_response = await analyze_security(analysis_request, background_tasks, (current_user, None))
                 
                 # Check if result matches expectations
                 detected_threats = [t.threat_type.value for t in analysis_response.threats_detected]
@@ -366,7 +368,7 @@ async def run_test_scenarios(
                     check_pii=True,
                     check_toxicity=False
                 )
-                filter_response = await filter_content(filter_request, (current_user, None))
+                filter_response = await filter_content(filter_request, background_tasks, (current_user, None))
                 
                 # Check if PII was detected
                 pii_detected = len(filter_response.pii_detected) > 0
@@ -395,7 +397,7 @@ async def run_test_scenarios(
                     context_type=scenario.context_type,
                     metadata={"test_scenario": scenario.id}
                 )
-                analysis_response = await analyze_security(analysis_request, (current_user, None))
+                analysis_response = await analyze_security(analysis_request, background_tasks, (current_user, None))
                 
                 # Should have no threats
                 passed = analysis_response.is_safe and len(analysis_response.threats_detected) == 0

@@ -270,7 +270,7 @@ def analyze_jailbreak(content: str) -> Optional[ThreatDetection]:
 async def analyze_security(
     request: SecurityAnalysisRequest,
     background_tasks: BackgroundTasks,
-    auth_data: tuple[TokenData, Optional[UUID]] = Depends(get_authenticated_user)
+    auth_data = Depends(get_authenticated_user)
 ):
     """Analyze content for security threats"""
     import time
