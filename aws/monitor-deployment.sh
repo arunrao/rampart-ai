@@ -9,8 +9,15 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Auto-source .env if it exists
+if [ -f .env ]; then
+    set -a  # Automatically export all variables
+    source .env
+    set +a
+fi
+
 STACK_NAME="${STACK_NAME:-rampart-production}"
-AWS_REGION="${AWS_REGION:-us-east-1}"
+AWS_REGION="${AWS_REGION:-us-west-2}"
 
 # Get Auto Scaling Group name
 ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \

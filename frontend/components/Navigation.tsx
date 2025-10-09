@@ -26,12 +26,17 @@ import {
 
 export default function Navigation() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, logout, loading } = useAuth();
   const { isSidebarOpen, setIsSidebarOpen } = useSidebar();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Don't show navigation on auth pages
   if (pathname === "/login" || pathname?.startsWith("/auth/")) {
+    return null;
+  }
+
+  // Don't show navigation on landing page or docs for non-authenticated users
+  if (!loading && !user && (pathname === "/" || pathname === "/landing" || pathname === "/docs")) {
     return null;
   }
 

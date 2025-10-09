@@ -13,17 +13,14 @@ echo -e "${GREEN}   Project Rampart AWS Deployment${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Check if .env file exists but variables not loaded
-if [ -f .env ] && [ -z "$STACK_NAME" ]; then
-    echo -e "${YELLOW}⚠️  Found .env file but environment variables not loaded${NC}"
+# Auto-source .env if it exists
+if [ -f .env ]; then
+    echo -e "${BLUE}📋 Loading configuration from .env...${NC}"
+    set -a  # Automatically export all variables
+    source .env
+    set +a
+    echo -e "${GREEN}✓ Configuration loaded${NC}"
     echo ""
-    echo "Please run:"
-    echo -e "${BLUE}  source .env${NC}"
-    echo ""
-    echo "Then run this script again:"
-    echo -e "${BLUE}  ./deploy.sh${NC}"
-    echo ""
-    exit 1
 fi
 
 # Check if setup hasn't been run
@@ -101,7 +98,10 @@ docker build --platform linux/amd64 -t rampart-backend:latest .
 echo "  Building frontend image for AMD64..."
 cd ../frontend
 # Build with the actual domain URL
-docker build --platform linux/amd64 --build-arg NEXT_PUBLIC_API_URL=https://${DOMAIN_NAME}/api/v1 -t rampart-frontend:latest .
+docker build --platform linux/amd64 \
+  --build-arg NEXT_PUBLIC_API_URL=https://${DOMAIN_NAME}/api/v1 \
+  --build-arg NEXT_PUBLIC_GITHUB_URL=https://github.com/arunrao/rampart-ai \
+  -t rampart-frontend:latest .
 
 cd ../aws
 

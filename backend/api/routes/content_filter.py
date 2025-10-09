@@ -1,7 +1,7 @@
 """
 Content filtering endpoints - PII detection, toxicity, etc.
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Tuple
 from functools import lru_cache
@@ -574,6 +574,7 @@ def detect_pii_presidio(content: str) -> Tuple[List[PIIEntity], Optional[str]]:
 )
 async def filter_content(
     request: ContentFilterRequest,
+    background_tasks: BackgroundTasks,
     auth_data: tuple[TokenData, Optional[UUID]] = Depends(get_authenticated_user)
 ):
     """
@@ -789,10 +790,10 @@ async def filter_content(
 
         filter_results[result_id] = response
         
-        # Track API key usage if authenticated via API key
+        # Track API key usage in background (non-blocking)
         current_user, api_key_id = auth_data
         if api_key_id:
-            track_api_key_usage(api_key_id, "/filter", tokens_used=0, cost_usd=0.0)
+            background_tasks.add_task(track_api_key_usage, api_key_id, "/filter", 0, 0.0)
         
         return response
 

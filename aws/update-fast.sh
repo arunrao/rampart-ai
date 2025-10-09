@@ -1,5 +1,7 @@
 #!/bin/bash
-# Update the application with new code
+# Fast code-only deployment using base image
+# Uses pre-built base image with ML models
+# Typical deployment time: 3-5 minutes (vs 10-15 minutes)
 
 set -e
 
@@ -11,7 +13,7 @@ NC='\033[0m'
 # Auto-source .env if it exists
 if [ -f .env ]; then
     echo -e "${BLUE}📋 Loading configuration from .env...${NC}"
-    set -a  # Automatically export all variables
+    set -a
     source .env
     set +a
     echo -e "${GREEN}✓ Configuration loaded${NC}"
@@ -22,24 +24,27 @@ STACK_NAME="${STACK_NAME:-rampart-production}"
 AWS_REGION="${AWS_REGION:-us-west-2}"
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}   Updating Project Rampart${NC}"
+echo -e "${GREEN}   Fast Code-Only Deployment${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-echo -e "${YELLOW}Step 1: Getting AWS Account ID${NC}"
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 echo "  Account ID: $AWS_ACCOUNT_ID"
-
+echo "  Region: $AWS_REGION"
 echo ""
-echo -e "${YELLOW}Step 2: Building New Docker Images${NC}"
 
-# Build backend
-echo "  Building backend image..."
+echo -e "${YELLOW}Step 1: Building application images (fast!)${NC}"
+
+# Build backend using base image
+echo "  Building backend..."
 cd ../backend
-docker build --platform linux/amd64 -t rampart-backend:latest .
+docker build --platform linux/amd64 \
+  -f Dockerfile.app \
+  --build-arg BASE_IMAGE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/rampart-backend-base:latest \
+  -t rampart-backend:latest .
 
 # Build frontend
-echo "  Building frontend image..."
+echo "  Building frontend..."
 cd ../frontend
 # Use HTTPS domain, not ALB URL
 API_URL="https://${DOMAIN_NAME:-rampart.arunrao.com}/api/v1"
@@ -51,23 +56,23 @@ docker build --platform linux/amd64 \
 cd ../aws
 
 echo ""
-echo -e "${YELLOW}Step 3: Pushing Docker Images to ECR${NC}"
+echo -e "${YELLOW}Step 2: Pushing images to ECR${NC}"
 
 # Login to ECR
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-# Tag and push backend
-echo "  Pushing backend image..."
+# Push backend
+echo "  Pushing backend..."
 docker tag rampart-backend:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/rampart-backend:latest
 docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/rampart-backend:latest
 
-# Tag and push frontend
-echo "  Pushing frontend image..."
+# Push frontend
+echo "  Pushing frontend..."
 docker tag rampart-frontend:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/rampart-frontend:latest
 docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/rampart-frontend:latest
 
 echo ""
-echo -e "${YELLOW}Step 4: Triggering Instance Refresh (Zero-Downtime Deployment)${NC}"
+echo -e "${YELLOW}Step 3: Triggering Instance Refresh${NC}"
 
 # Get Auto Scaling Group name
 ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
@@ -98,15 +103,15 @@ if [ -n "$EXISTING_REFRESH" ]; then
     sleep 5
 fi
 
-# Start instance refresh with proper configuration
+# Start instance refresh
 echo "  Starting instance refresh..."
 REFRESH_ID=$(aws autoscaling start-instance-refresh \
   --auto-scaling-group-name "$ASG_NAME" \
   --preferences '{
     "MinHealthyPercentage": 50,
-    "InstanceWarmup": 300,
+    "InstanceWarmup": 180,
     "CheckpointPercentages": [50, 100],
-    "CheckpointDelay": 60,
+    "CheckpointDelay": 30,
     "SkipMatching": false
   }' \
   --region $AWS_REGION \
@@ -117,20 +122,20 @@ echo "  ✅ Instance Refresh Started: $REFRESH_ID"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}   Deployment Started!${NC}"
+echo -e "${GREEN}   Fast Deployment Started!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Instance Refresh ID: $REFRESH_ID"
 echo ""
+echo "Expected deployment time: ~3-5 minutes"
+echo "  (vs 10-15 min with full model rebuild)"
+echo ""
 echo "The deployment will:"
-echo "  • Maintain 50% healthy instances during rollout"
-echo "  • Wait 5 minutes for ML models to load on new instances"
-echo "  • Replace instances one at a time"
-echo "  • Total time: ~10-15 minutes"
+echo "  • Use pre-loaded ML models from base image"
+echo "  • Wait only 3 minutes for warmup (vs 5 min)"
+echo "  • Replace instances with new code"
 echo ""
 echo "Monitor progress with:"
-echo "  aws autoscaling describe-instance-refreshes \\"
-echo "    --auto-scaling-group-name $ASG_NAME \\"
-echo "    --region $AWS_REGION"
+echo "  ./monitor-deployment.sh"
 echo ""
 echo -e "${YELLOW}⏳ Deployment in progress...${NC}"

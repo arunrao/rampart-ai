@@ -3,10 +3,22 @@
 
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
 NC='\033[0m'
 
+# Auto-source .env if it exists
+if [ -f .env ]; then
+    echo -e "${BLUE}📋 Loading configuration from .env...${NC}"
+    set -a  # Automatically export all variables
+    source .env
+    set +a
+    echo -e "${GREEN}✓ Configuration loaded${NC}"
+    echo ""
+fi
+
 STACK_NAME="${STACK_NAME:-rampart-production}"
-AWS_REGION="${AWS_REGION:-us-east-1}"
+AWS_REGION="${AWS_REGION:-us-west-2}"
 
 echo -e "${YELLOW}WARNING: This will delete all resources including:${NC}"
 echo "  - EC2 instances"

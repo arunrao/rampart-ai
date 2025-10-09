@@ -21,7 +21,19 @@ _engine: Optional[Engine] = None
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
-        _engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+        # Optimize connection pooling for production
+        # pool_size: Number of connections to keep open (default: 5)
+        # max_overflow: Max connections beyond pool_size (default: 10)
+        # pool_pre_ping: Test connections before using (prevents stale connections)
+        # pool_recycle: Recycle connections after 1 hour (AWS RDS timeout is ~8h)
+        _engine = create_engine(
+            DATABASE_URL,
+            pool_size=10,           # Keep 10 connections open
+            max_overflow=20,        # Allow 20 additional connections during spikes
+            pool_pre_ping=True,     # Test connection health before use
+            pool_recycle=3600,      # Recycle connections every hour
+            echo=False
+        )
     return _engine
 
 

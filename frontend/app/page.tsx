@@ -1,18 +1,35 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Shield, Activity, AlertTriangle, FileText } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { observabilityApi, securityApi, contentFilterApi } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/utils";
-import ProtectedRoute from "@/components/ProtectedRoute";
+import { useAuth } from "@/contexts/AuthContext";
+import LandingPage from "./landing/page";
 
 export default function HomePage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  // Show landing page for non-authenticated users
+  if (!loading && !user) {
+    return <LandingPage />;
+  }
+
+  // Show dashboard for authenticated users
+  if (!loading && user) {
+    return <HomePageContent />;
+  }
+
+  // Loading state
   return (
-    <ProtectedRoute>
-      <HomePageContent />
-    </ProtectedRoute>
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    </div>
   );
 }
 

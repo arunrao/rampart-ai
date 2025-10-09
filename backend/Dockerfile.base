@@ -1,0 +1,43 @@
+# Base image with ML models pre-loaded
+# Build once, reuse for all code deployments
+# Build: docker build -f Dockerfile.base -t rampart-backend-base:latest .
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    curl \
+    && pip install --no-cache-dir --upgrade pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+
+# Install CPU-only PyTorch first
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge -y gcc \
+    && apt-get autoremove -y
+
+# Create model cache directory
+RUN mkdir -p /app/.cache/huggingface
+
+# Pre-download ALL models during base image build
+# DeBERTa model (~300MB)
+RUN python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
+    model_name = 'protectai/deberta-v3-base-prompt-injection-v2'; \
+    AutoTokenizer.from_pretrained(model_name); \
+    AutoModelForSequenceClassification.from_pretrained(model_name); \
+    print('✓ DeBERTa model pre-downloaded')"
+
+# GLiNER model (~200MB) - ENABLED for base image
+RUN python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('urchade/gliner_multi-v2.1', cache_dir='/app/.cache/huggingface'); \
+    print('✓ GLiNER model pre-downloaded')" || echo "⚠ GLiNER will download on first use"
+
+# This base image is now ~2.5GB with all models
+# Tag and push: docker tag rampart-backend-base:latest <ECR>/rampart-backend-base:latest

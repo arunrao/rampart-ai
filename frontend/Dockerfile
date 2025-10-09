@@ -15,9 +15,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Accept build argument for API URL
+# Accept build arguments for public environment variables
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
+ARG NEXT_PUBLIC_GITHUB_URL=https://github.com/arunrao/rampart-ai
+ENV NEXT_PUBLIC_GITHUB_URL=${NEXT_PUBLIC_GITHUB_URL}
 
 # Next.js collects anonymous telemetry data about general usage.
 # Uncomment the following line to disable telemetry during the build.

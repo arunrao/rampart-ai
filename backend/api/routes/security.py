@@ -7,7 +7,7 @@ Features:
 - Jailbreak attempt detection
 - Real-time threat analysis
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -269,6 +269,7 @@ def analyze_jailbreak(content: str) -> Optional[ThreatDetection]:
 @router.post("/analyze", response_model=SecurityAnalysisResponse)
 async def analyze_security(
     request: SecurityAnalysisRequest,
+    background_tasks: BackgroundTasks,
     auth_data: tuple[TokenData, Optional[UUID]] = Depends(get_authenticated_user)
 ):
     """Analyze content for security threats"""
@@ -321,10 +322,10 @@ async def analyze_security(
     
     security_analyses[analysis_id] = response
     
-    # Track API key usage if authenticated via API key
+    # Track API key usage in background (non-blocking)
     current_user, api_key_id = auth_data
     if api_key_id:
-        track_api_key_usage(api_key_id, "/security/analyze", tokens_used=0, cost_usd=0.0)
+        background_tasks.add_task(track_api_key_usage, api_key_id, "/security/analyze", 0, 0.0)
     
     # Create incident if high risk
     if risk_score >= 0.7 and threats:
