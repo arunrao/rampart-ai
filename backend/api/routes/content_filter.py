@@ -575,7 +575,7 @@ def detect_pii_presidio(content: str) -> Tuple[List[PIIEntity], Optional[str]]:
 async def filter_content(
     request: ContentFilterRequest,
     background_tasks: BackgroundTasks,
-    auth_data: tuple[TokenData, Optional[UUID]] = Depends(get_authenticated_user)
+    auth_data = Depends(get_authenticated_user)
 ):
     """
     Comprehensive content analysis combining multiple security filters.
