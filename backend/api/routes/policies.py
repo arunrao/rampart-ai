@@ -99,6 +99,7 @@ class PolicyCreate(BaseModel):
 class Policy(BaseModel):
     """Policy model"""
     id: UUID
+    user_id: UUID  # Owner of the policy - required for multi-tenancy
     name: str
     description: Optional[str]
     policy_type: PolicyType
@@ -214,10 +215,11 @@ async def create_policy(
     policy: PolicyCreate,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Create a new policy"""
+    """Create a new policy (scoped to authenticated user)"""
     policy_id = uuid4()
     new_policy = Policy(
         id=policy_id,
+        user_id=current_user.user_id,  # Always use authenticated user's ID
         name=policy.name,
         description=policy.description,
         policy_type=policy.policy_type,
@@ -239,8 +241,12 @@ async def list_policies(
     limit: int = 50,
     offset: int = 0
 ):
-    """List all policies with optional filtering"""
-    filtered_policies = list(policies_db.values())
+    """List all policies for the current user with optional filtering"""
+    # Only return policies owned by the authenticated user
+    filtered_policies = [
+        p for p in policies_db.values() 
+        if p.user_id == current_user.user_id
+    ]
     
     if policy_type:
         filtered_policies = [p for p in filtered_policies if p.policy_type == policy_type]
@@ -256,10 +262,17 @@ async def get_policy(
     policy_id: UUID,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Get a specific policy"""
+    """Get a specific policy (only if it belongs to the current user)"""
     if policy_id not in policies_db:
         raise HTTPException(status_code=404, detail="Policy not found")
-    return policies_db[policy_id]
+    
+    policy = policies_db[policy_id]
+    
+    # Verify ownership - return 404 to prevent enumeration
+    if policy.user_id != current_user.user_id:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    
+    return policy
 
 
 @router.put("/policies/{policy_id}", response_model=Policy)
@@ -268,14 +281,19 @@ async def update_policy(
     policy_update: PolicyCreate,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Update an existing policy"""
+    """Update an existing policy (only if it belongs to the current user)"""
     if policy_id not in policies_db:
         raise HTTPException(status_code=404, detail="Policy not found")
     
     existing_policy = policies_db[policy_id]
     
+    # Verify ownership - return 404 to prevent enumeration
+    if existing_policy.user_id != current_user.user_id:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    
     updated_policy = Policy(
         id=policy_id,
+        user_id=existing_policy.user_id,  # Preserve original owner
         name=policy_update.name,
         description=policy_update.description,
         policy_type=policy_update.policy_type,
@@ -297,8 +315,14 @@ async def delete_policy(
     policy_id: UUID,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Delete a policy"""
+    """Delete a policy (only if it belongs to the current user)"""
     if policy_id not in policies_db:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    
+    policy = policies_db[policy_id]
+    
+    # Verify ownership - return 404 to prevent enumeration
+    if policy.user_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="Policy not found")
     
     del policies_db[policy_id]
@@ -310,11 +334,16 @@ async def toggle_policy(
     policy_id: UUID,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Enable or disable a policy"""
+    """Enable or disable a policy (only if it belongs to the current user)"""
     if policy_id not in policies_db:
         raise HTTPException(status_code=404, detail="Policy not found")
     
     policy = policies_db[policy_id]
+    
+    # Verify ownership - return 404 to prevent enumeration
+    if policy.user_id != current_user.user_id:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    
     policy.enabled = not policy.enabled
     policy.updated_at = datetime.utcnow()
     
@@ -335,14 +364,19 @@ async def evaluate_policies(
     actions_taken = []
     modified_content = request.content
     
-    # Get policies to evaluate
+    # Get policies to evaluate (only user's own policies)
     if request.policy_ids:
         policies_to_eval = [
             policies_db[pid] for pid in request.policy_ids 
-            if pid in policies_db and policies_db[pid].enabled
+            if pid in policies_db 
+            and policies_db[pid].enabled 
+            and policies_db[pid].user_id == current_user.user_id
         ]
     else:
-        policies_to_eval = [p for p in policies_db.values() if p.enabled]
+        policies_to_eval = [
+            p for p in policies_db.values() 
+            if p.enabled and p.user_id == current_user.user_id
+        ]
     
     # Sort by rule priority
     for policy in policies_to_eval:
