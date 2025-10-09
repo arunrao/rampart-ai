@@ -11,7 +11,7 @@ export default function DocsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Use environment variable for API docs URL
-  const apiDocsUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '/docs') || 'http://localhost:8000/docs';
+  const apiDocsUrl = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/docs` : 'http://localhost:8000/api/v1/docs';
 
   return (
     <div className="min-h-screen bg-background">
@@ -140,18 +140,7 @@ function QuickStartContent() {
 
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle>1. Installation</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-slate-900 dark:bg-black text-slate-100 p-4 rounded-lg overflow-x-auto">
-            <code>pip install rampart-security</code>
-          </pre>
-        </CardContent>
-      </Card>
-
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>2. Get Your API Key</CardTitle>
+          <CardTitle>1. Get Your API Key</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-slate-600 dark:text-slate-400 mb-4">
@@ -167,34 +156,64 @@ function QuickStartContent() {
 
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle>3. Secure Your First LLM Call</CardTitle>
+          <CardTitle>2. Filter User Input Before Sending to LLM</CardTitle>
+          <CardDescription>Check prompts for prompt injection, PII, and other threats</CardDescription>
         </CardHeader>
         <CardContent>
           <pre className="bg-slate-900 dark:bg-black text-slate-100 p-4 rounded-lg overflow-x-auto text-sm">
-            <code>{`from rampart import SecureLLMClient
+            <code>{`# Python example
+import requests
 
-# Initialize client
-client = SecureLLMClient(
-    api_key="rmp_live_xxxxx",
-    provider="openai"
+response = requests.post(
+    "https://rampart.arunrao.com/api/v1/filter",
+    headers={"Authorization": "Bearer rmp_live_xxxxx"},
+    json={
+        "content": user_input,
+        "filters": ["prompt_injection", "pii"],
+        "user_id": "user_123"
+    }
 )
 
-# Make a secured LLM call
-result = await client.chat(
-    prompt="What is machine learning?",
-    model="gpt-4",
-    user_id="user_123"
-)
+result = response.json()
 
-# Check security status
-if result["blocked"]:
-    print("⚠️ Blocked:", result['security_checks']['reason'])
+# Check if content is safe
+if not result["is_safe"]:
+    print("⚠️ Threat detected:", result["threats"])
+    print("Details:", result["prompt_injection"])
 else:
-    print("✓ Safe response:", result['response'])
-    
-# View security details
-print("Prompt Injection Risk:", result['security_checks']['prompt_injection']['risk_score'])
-print("Cost: $", result['cost'])`}</code>
+    # Safe to send to your LLM
+    print("✓ Content is safe - proceed to LLM")
+    llm_response = call_your_llm(user_input)`}</code>
+          </pre>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle>3. Or Use the Secured LLM Proxy (Optional)</CardTitle>
+          <CardDescription>Automatic security checks + LLM calls in one request</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre className="bg-slate-900 dark:bg-black text-slate-100 p-4 rounded-lg overflow-x-auto text-sm">
+            <code>{`# Combined filtering + LLM call
+response = requests.post(
+    "https://rampart.arunrao.com/api/v1/llm/complete",
+    headers={"Authorization": "Bearer rmp_live_xxxxx"},
+    json={
+        "prompt": user_input,
+        "model": "gpt-4",
+        "provider": "openai",
+        "user_id": "user_123"
+    }
+)
+
+result = response.json()
+
+if result["blocked"]:
+    print("⚠️ Request blocked:", result["reason"])
+else:
+    print("✓ LLM Response:", result["response"])
+    print("Security checks:", result["security_checks"])`}</code>
           </pre>
         </CardContent>
       </Card>
@@ -242,7 +261,7 @@ print("Cost: $", result['cost'])`}</code>
 
 function RestAPIContent() {
   // Use environment variable for API docs URL
-  const apiDocsUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '/docs') || 'http://localhost:8000/docs';
+  const apiDocsUrl = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/docs` : 'http://localhost:8000/api/v1/docs';
   
   return (
     <div className="prose dark:prose-invert max-w-none">

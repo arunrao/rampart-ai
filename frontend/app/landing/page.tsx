@@ -11,7 +11,7 @@ export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Use environment variable for API URL, fallback for local dev
-  const apiDocsUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '/docs') || 'http://localhost:8000/docs';
+  const apiDocsUrl = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/docs` : 'http://localhost:8000/api/v1/docs';
 
   const codeExamples = {
     python: `import requests
@@ -213,9 +213,9 @@ if (!result.is_safe) {
             </div>
           </div>
           
-          <div className="relative">
+          <div className="relative min-w-0">
             <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl blur-3xl opacity-20"></div>
-            <Card className="relative shadow-2xl border-2 border-slate-200 dark:border-slate-800">
+            <Card className="relative shadow-2xl border-2 border-slate-200 dark:border-slate-800 overflow-hidden">
               <CardHeader className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                 <div className="flex justify-between items-center">
                   <div className="flex space-x-2">
@@ -223,10 +223,10 @@ if (!result.is_safe) {
                     <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                     <div className="w-3 h-3 rounded-full bg-green-500"></div>
                   </div>
-                  <div className="flex space-x-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => setSelectedExample("python")}
-                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                      className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium transition-colors ${
                         selectedExample === "python"
                           ? "bg-blue-600 text-white"
                           : "text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800"
@@ -236,7 +236,7 @@ if (!result.is_safe) {
                     </button>
                     <button
                       onClick={() => setSelectedExample("curl")}
-                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                      className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium transition-colors ${
                         selectedExample === "curl"
                           ? "bg-blue-600 text-white"
                           : "text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800"
@@ -246,7 +246,7 @@ if (!result.is_safe) {
                     </button>
                     <button
                       onClick={() => setSelectedExample("javascript")}
-                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                      className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium transition-colors ${
                         selectedExample === "javascript"
                           ? "bg-blue-600 text-white"
                           : "text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800"
@@ -257,8 +257,8 @@ if (!result.is_safe) {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="p-0">
-                <pre className="p-6 overflow-x-auto text-sm leading-relaxed">
+              <CardContent className="p-0 overflow-hidden">
+                <pre className="p-4 sm:p-6 overflow-x-auto text-xs sm:text-sm leading-relaxed bg-slate-50 dark:bg-slate-900">
                   <code className="text-slate-800 dark:text-slate-200 font-mono">
                     {codeExamples[selectedExample as keyof typeof codeExamples]}
                   </code>
