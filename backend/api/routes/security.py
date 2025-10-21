@@ -199,37 +199,72 @@ def analyze_prompt_injection(content: str, fast_mode: bool = False) -> Optional[
 
 def analyze_data_exfiltration(content: str) -> Optional[ThreatDetection]:
     """Analyze content for data exfiltration attempts"""
-    # Check for suspicious patterns
-    exfiltration_patterns = [
-        "send to",
-        "send this",
-        "email this",
-        "email to",
-        "post to",
-        "upload to",
-        "save to url",
-        "webhook",
-        "http://",
-        "https://",
-        "curl",
-        "wget"
-    ]
-    
+    # Define patterns with weights (higher = more suspicious)
+    exfiltration_patterns = {
+        # High-risk patterns (0.7 weight) - clear exfiltration commands
+        "email all": 0.7,
+        "email everything": 0.7,
+        "send all": 0.7,
+        "send everything": 0.7,
+        "forward all": 0.7,
+        "transfer all": 0.7,
+        # Medium-risk patterns (0.5 weight) - targeted actions
+        "email to": 0.5,
+        "email this": 0.5,
+        "send email": 0.5,
+        "send to": 0.5,
+        "send this": 0.5,
+        "forward to": 0.5,
+        "forward this": 0.5,
+        "transfer to": 0.5,
+        "post to": 0.5,
+        "upload to": 0.5,
+        "save to url": 0.5,
+        # Command-line exfiltration (0.6 weight)
+        "curl": 0.6,
+        "wget": 0.6,
+        "fetch(": 0.6,
+        # Low-risk patterns (0.3 weight) - might be legitimate
+        "webhook": 0.3,
+        "callback": 0.3,
+        "http://": 0.2,
+        "https://": 0.2,
+    }
+
     content_lower = content.lower()
-    detected_patterns = [p for p in exfiltration_patterns if p in content_lower]
+    detected_patterns = []
+    total_score = 0.0
+
+    for pattern, weight in exfiltration_patterns.items():
+        if pattern in content_lower:
+            detected_patterns.append(pattern)
+            total_score += weight
     
     if detected_patterns:
-        # Each pattern adds 0.5 - single strong pattern is enough to block
-        confidence = min(len(detected_patterns) * 0.5, 1.0)
-        severity = SeverityLevel.CRITICAL if confidence >= 0.7 else SeverityLevel.HIGH
-        
+        # Use weighted score, capped at 1.0
+        confidence = min(total_score, 1.0)
+
+        # Determine severity and action based on confidence
+        if confidence >= 0.9:
+            severity = SeverityLevel.CRITICAL
+            recommended_action = "block"
+        elif confidence >= 0.7:
+            severity = SeverityLevel.HIGH
+            recommended_action = "block"
+        elif confidence >= 0.5:
+            severity = SeverityLevel.MEDIUM
+            recommended_action = "flag"  # Flag for review, don't auto-block
+        else:
+            severity = SeverityLevel.LOW
+            recommended_action = "monitor"
+
         return ThreatDetection(
             threat_type=ThreatType.DATA_EXFILTRATION,
             severity=severity,
             confidence=confidence,
             description="Potential data exfiltration attempt detected",
             indicators=detected_patterns,
-            recommended_action="block"
+            recommended_action=recommended_action
         )
     return None
 
@@ -283,18 +318,22 @@ async def analyze_security(
     
     # Run security analyses
     threats = []
-    
+
     if request.context_type in ["input", "system_prompt"]:
         # Check for prompt injection
         if threat := analyze_prompt_injection(request.content):
             threats.append(threat)
-        
+
         # Check for jailbreak
         if threat := analyze_jailbreak(request.content):
             threats.append(threat)
-    
+
+        # Check for data exfiltration commands in input
+        if threat := analyze_data_exfiltration(request.content):
+            threats.append(threat)
+
     if request.context_type == "output":
-        # Check for data exfiltration
+        # Check for data exfiltration in output
         if threat := analyze_data_exfiltration(request.content):
             threats.append(threat)
     
