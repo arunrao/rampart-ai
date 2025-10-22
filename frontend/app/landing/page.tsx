@@ -93,7 +93,7 @@ if (!result.is_safe) {
           
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-4 lg:space-x-6">
-            <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/yourusername/project-rampart"} target="_blank" rel="noopener noreferrer" className="text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center space-x-1">
+            <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer" className="text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center space-x-1">
               <Github className="h-5 w-5" />
               <span>GitHub</span>
             </a>
@@ -133,7 +133,7 @@ if (!result.is_safe) {
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <div className="container mx-auto px-4 py-4 space-y-3">
-              <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/yourusername/project-rampart"} target="_blank" rel="noopener noreferrer" className="flex items-center space-x-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 py-2">
+              <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer" className="flex items-center space-x-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 py-2">
                 <Github className="h-5 w-5" />
                 <span>GitHub</span>
               </a>
@@ -783,7 +783,7 @@ else:
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/yourusername/project-rampart"} target="_blank" rel="noopener noreferrer">
+            <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer">
               <Button size="lg" variant="outline" className="border-2 border-white text-white hover:bg-white/10 text-lg px-8">
                 <Github className="mr-2 h-5 w-5" />
                 View on GitHub
@@ -822,7 +822,7 @@ else:
               <ul className="space-y-2 text-sm">
                 <li><Link href="/docs" className="hover:text-blue-400 transition-colors">Documentation</Link></li>
                 <li><Link href={apiDocsUrl} className="hover:text-blue-400 transition-colors">API Reference</Link></li>
-                <li><a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/yourusername/project-rampart"} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">GitHub</a></li>
+                <li><a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">GitHub</a></li>
                 <li><Link href="/examples" className="hover:text-blue-400 transition-colors">Examples</Link></li>
               </ul>
             </div>
@@ -839,10 +839,10 @@ else:
           </div>
           
           <div className="border-t border-slate-800 pt-8 flex flex-col md:flex-row justify-between items-center text-sm text-slate-400">
-            <p>&copy; 2025 Project Rampart. Open source under MIT License.</p>
+            <p>&copy; 2025 Project Rampart. Open source under Apache License 2.0.</p>
             <div className="flex space-x-6 mt-4 md:mt-0">
               <a href="https://twitter.com/rampart" className="hover:text-blue-400 transition-colors">Twitter</a>
-              <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/yourusername/project-rampart"} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">GitHub</a>
+              <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">GitHub</a>
               <a href="https://discord.gg/rampart" className="hover:text-blue-400 transition-colors">Discord</a>
             </div>
           </div>

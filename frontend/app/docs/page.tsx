@@ -632,7 +632,7 @@ function DeploymentContent() {
         <CardContent>
           <pre className="bg-slate-900 dark:bg-black text-slate-100 p-4 rounded-lg overflow-x-auto text-sm">
             <code>{`# Clone repository
-git clone https://github.com/yourusername/project-rampart.git
+git clone https://github.com/arunrao/rampart-ai.git
 cd project-rampart
 
 # Generate secrets

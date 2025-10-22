@@ -88,10 +88,8 @@ Project Rampart is a comprehensive AI Security & Observability Platform that pro
 
 ## 🔗 External Links
 
-- **Live Demo**: [https://rampart-demo.com](https://rampart-demo.com) (coming soon)
-- **GitHub**: [https://github.com/your-org/project-rampart](https://github.com/your-org/project-rampart)
-- **Docker Hub**: [https://hub.docker.com/r/your-org/rampart](https://hub.docker.com/r/your-org/rampart)
-- **Slack Community**: [Join our Slack](https://slack.rampart.ai) (coming soon)
+- **Live Demo**: [https://rampart.arunrao.com](https://rampart.arunrao.com)
+- **GitHub**: [https://github.com/arunrao/rampart-ai](https://github.com/arunrao/rampart-ai)
 
 ## 📞 Support
 
@@ -102,7 +100,7 @@ Project Rampart is a comprehensive AI Security & Observability Platform that pro
 
 ## 📄 License
 
-Project Rampart is licensed under the MIT License. See [LICENSE](../LICENSE) for details.
+Project Rampart is licensed under the Apache License 2.0. See [LICENSE](../LICENSE) for details.
 
 ---
 

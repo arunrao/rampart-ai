@@ -43,7 +43,7 @@ Thank you for your interest in contributing to Project Rampart! This document pr
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/project-rampart.git
+git clone https://github.com/arunrao/rampart-ai.git
 cd project-rampart
 
 # Run setup
@@ -231,7 +231,7 @@ project-rampart/
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
 
 ---
 

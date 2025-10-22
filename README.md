@@ -1,6 +1,21 @@
 # Project Rampart 🛡️
 
-**AI Security & Observability Platform** | v0.2.2
+<p align="center">
+  <img src="Project Rampart Logo.png" alt="Project Rampart Logo" width="400"/>
+</p>
+
+<p align="center">
+  <strong>AI Security & Observability Platform</strong> | v0.2.2
+</p>
+
+<p align="center">
+  <a href="https://rampart.arunrao.com">Live Demo</a> •
+  <a href="https://github.com/arunrao/rampart-ai">GitHub</a> •
+  <a href="#documentation">Documentation</a> •
+  <a href="https://github.com/arunrao/rampart-ai/issues">Issues</a>
+</p>
+
+---
 
 ## Executive Summary
 
@@ -609,6 +624,17 @@ Rampart detects and mitigates **50+ specific attack behaviors** across input val
 
 ## Deployment & Configuration
 
+### 🌐 Try the Live Demo
+
+Experience Project Rampart in action: **[https://rampart.arunrao.com](https://rampart.arunrao.com)**
+
+The live demo includes:
+- Interactive content filtering playground
+- Real-time prompt injection detection
+- PII detection and redaction examples
+- LLM observability dashboard
+- Security policy configuration
+
 ### Quick Start (Development)
 
 **Using Docker Compose (Recommended):**
@@ -624,10 +650,8 @@ export POSTGRES_PASSWORD=$(python -c "import secrets; print(secrets.token_urlsaf
 
 # Copy and configure environment
 cp .env.example .env
-## Quick Start
+# Edit .env with your secrets
 
-### Local Development (Recommended for Testing)
-```bash
 # Start all services with Docker
 docker-compose up -d
 
@@ -636,6 +660,12 @@ docker-compose up -d
 
 # Access the application
 open http://localhost:3000
+```
+
+### Local Development (Without Docker)
+
+```bash
+# Backend (terminal 1)
 cd backend
 python -m venv venv
 source venv/bin/activate
@@ -644,7 +674,7 @@ export SECRET_KEY="your-secret"
 export JWT_SECRET_KEY="your-jwt-secret"
 uvicorn api.main:app --reload
 
-# Frontend (separate terminal)
+# Frontend (terminal 2)
 cd frontend
 npm install
 echo "NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1" > .env.local
@@ -1478,7 +1508,7 @@ This project implements security patterns from:
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+Apache License 2.0 - See [LICENSE](LICENSE) file for details.
 
 ## Security Contact
 
