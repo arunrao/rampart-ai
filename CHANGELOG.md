@@ -5,6 +5,67 @@ All notable changes to Project Rampart will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2025-10-22
+
+### Enhanced
+
+#### Data Exfiltration Detection - Granular Severity Patterns
+- **Enhanced DataExfiltrationMonitor with weighted pattern system** - Improved detection accuracy and reduced false positives
+  - **Granular Severity Levels**: Bulk commands (0.95) vs targeted commands (0.75) vs ambiguous patterns (0.3-0.5)
+  - **Bulk Exfiltration** (Critical - 0.95): "Email all data", "Send everything", "Forward all"
+  - **Targeted Exfiltration** (High - 0.75): "Send this to email@example.com"
+  - **Ambiguous Patterns** (Low - 0.3): "webhook", "callback" mentions without URLs
+  - **File Changed**: `backend/security/data_exfiltration_monitor.py`
+  - **Impact**: Better risk assessment and fewer false positives on legitimate workflow discussions
+
+#### REST API Integration
+- **Integrated comprehensive DataExfiltrationMonitor into /api/v1/security/analyze endpoint**
+  - **Before**: Simple pattern matching with limited detection capabilities
+  - **After**: Full credential detection, URL analysis, database URLs, internal IPs
+  - **Added**: API key detection (sk-*, AKIA*, etc.), JWT tokens, passwords, AWS keys, private keys
+  - **Added**: Database connection string detection (PostgreSQL, MongoDB, Redis)
+  - **Added**: Internal IP detection (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+  - **Added**: URL analysis with suspicious parameter detection (data=, token=, key=, secret=)
+  - **Added**: Trusted domain whitelisting
+  - **File Changed**: `backend/api/routes/security.py`
+  - **Impact**: REST API users now get same comprehensive protection as SDK users
+
+#### Pattern Improvements
+- **Fixed API key pattern** to support "API key: " (with space) in addition to "api_key:" and "api-key:"
+- **Added webhook pattern variations** to catch "Send webhook to https://..." in addition to "webhook url: https://..."
+- **Added granular command patterns**:
+  - Bulk exfiltration: `(email|send|forward|transfer|mail)\s+(all|everything|entire|complete)`
+  - Targeted exfiltration: `(send|email|forward|mail)\s+(this|it|the\s+\w+)\s+to\s+email@...`
+  - Generic commands: `(send|post|upload|transfer)\s+(to|data)` with lower severity
+  - Low-risk mentions: `webhook`, `callback` alone (monitoring only)
+
+### Testing
+- **Added comprehensive test suite** for granular severity patterns
+  - Test bulk vs targeted command severity differences
+  - Test ambiguous pattern handling
+  - Test false positive reduction
+  - Test credential + exfiltration combination (1.3x risk multiplier)
+- **File Changed**: `backend/tests/test_data_exfiltration.py`
+- **Result**: 10/10 integration tests passing
+
+### Performance
+- **No performance impact** - Same regex-based detection with improved patterns
+- **Improved accuracy**:
+  - Reduced false positives: Legitimate mentions like "configure webhooks" now low risk
+  - Improved threat detection: Bulk exfiltration attempts now correctly flagged as critical
+  - Better risk scoring: Combined threats (credential + exfiltration) now 1.0 risk score
+
+### Security
+- **Consistency across API surface** - REST API and SDK now provide identical protection
+- **Better risk communication** - Granular severity helps users understand threat levels
+- **Reduced alert fatigue** - Lower severity for ambiguous patterns means fewer false alarms
+
+### Technical Details
+- Weighted pattern system uses severity-based scoring (0.3-0.95 range)
+- Maintains backward compatibility with existing API contracts
+- Lazy initialization of DataExfiltrationMonitor for optimal performance
+- Comprehensive error handling with fallback to safe defaults
+
 ## [0.2.3] - 2025-10-09
 
 ### Fixed

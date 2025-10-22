@@ -43,7 +43,7 @@ class DataExfiltrationMonitor:
         return [
             SensitiveDataPattern(
                 name="api_key",
-                pattern=r"(?i)(api[_-]?key|apikey|api[_-]?secret)[\s:=]+['\"]?([a-zA-Z0-9_\-]{20,})['\"]?",
+                pattern=r"(?i)(api[\s_-]?key|apikey|api[\s_-]?secret)[\s:=]+['\"]?([a-zA-Z0-9_\-]{20,})['\"]?",
                 severity=0.95,
                 category="credentials"
             ),
@@ -86,42 +86,96 @@ class DataExfiltrationMonitor:
         ]
     
     def _load_exfiltration_indicators(self) -> List[Dict]:
-        """Load indicators of exfiltration attempts"""
+        """
+        Load indicators of exfiltration attempts with granular severity levels
+        
+        Severity levels:
+        - 0.9-1.0: Critical - clear bulk exfiltration attempts
+        - 0.7-0.8: High - targeted exfiltration or command execution
+        - 0.5-0.6: Medium - ambiguous patterns that might be legitimate
+        - 0.2-0.4: Low - commonly benign but worth monitoring
+        """
         return [
+            # CRITICAL SEVERITY (0.9-1.0) - Clear bulk exfiltration
             {
-                "name": "url_with_data",
-                "pattern": r"https?://[^\s]+\?[^\s]*(?:data|token|key|secret|password)=[^\s&]+",
-                "severity": 0.9,
-                "method": ExfiltrationMethod.URL_EMBEDDING
-            },
-            {
-                "name": "email_instruction",
-                "pattern": r"(?i)(send|email|forward|mail)\s+(?:this|it|the\s+\w+)\s+to\s+[\w\.-]+@[\w\.-]+",
+                "name": "bulk_email_command",
+                "pattern": r"(?i)(email|send|forward|transfer|mail)\s+(all|everything|entire|complete)",
                 "severity": 0.95,
                 "method": ExfiltrationMethod.EMAIL_COMMAND
             },
             {
-                "name": "webhook_call",
-                "pattern": r"(?i)(webhook|callback|notify)\s+(?:url|endpoint)[\s:]+https?://",
-                "severity": 0.85,
-                "method": ExfiltrationMethod.API_CALL
-            },
-            {
-                "name": "base64_encoded_url",
-                "pattern": r"(?i)base64.*https?://",
-                "severity": 0.8,
-                "method": ExfiltrationMethod.ENCODING
+                "name": "url_with_data",
+                "pattern": r"https?://[^\s]+\?[^\s]*(?:data|token|key|secret|password|auth|credential)=[^\s&]+",
+                "severity": 0.9,
+                "method": ExfiltrationMethod.URL_EMBEDDING
             },
             {
                 "name": "curl_command",
-                "pattern": r"curl\s+(?:-X\s+POST\s+)?https?://[^\s]+",
+                "pattern": r"curl\s+(?:-X\s+(?:POST|PUT)\s+)?https?://[^\s]+",
                 "severity": 0.9,
                 "method": ExfiltrationMethod.API_CALL
             },
             {
                 "name": "fetch_post",
-                "pattern": r"fetch\(['\"]https?://[^'\"]+['\"],\s*\{[^}]*method:\s*['\"]POST['\"]",
+                "pattern": r"fetch\(['\"]https?://[^'\"]+['\"],\s*\{[^}]*method:\s*['\"](?:POST|PUT)['\"]",
                 "severity": 0.9,
+                "method": ExfiltrationMethod.API_CALL
+            },
+            # HIGH SEVERITY (0.7-0.8) - Targeted exfiltration
+            {
+                "name": "targeted_email_command",
+                "pattern": r"(?i)(send|email|forward|mail)\s+(?:this|it|the\s+\w+)\s+to\s+[\w\.-]+@[\w\.-]+",
+                "severity": 0.75,
+                "method": ExfiltrationMethod.EMAIL_COMMAND
+            },
+            {
+                "name": "webhook_with_url",
+                "pattern": r"(?i)(webhook|callback)\s+(?:to\s+)?https?://",
+                "severity": 0.8,
+                "method": ExfiltrationMethod.API_CALL
+            },
+            {
+                "name": "webhook_with_endpoint",
+                "pattern": r"(?i)(webhook|callback|notify)\s+(?:url|endpoint)[\s:]+https?://",
+                "severity": 0.8,
+                "method": ExfiltrationMethod.API_CALL
+            },
+            {
+                "name": "base64_encoded_url",
+                "pattern": r"(?i)base64.*https?://",
+                "severity": 0.75,
+                "method": ExfiltrationMethod.ENCODING
+            },
+            {
+                "name": "wget_command",
+                "pattern": r"wget\s+(?:--post-data|-O)\s+https?://[^\s]+",
+                "severity": 0.8,
+                "method": ExfiltrationMethod.API_CALL
+            },
+            # MEDIUM SEVERITY (0.5-0.6) - Ambiguous patterns
+            {
+                "name": "generic_send_command",
+                "pattern": r"(?i)\b(send|post|upload|transfer)\s+(?:to|data)\b",
+                "severity": 0.5,
+                "method": ExfiltrationMethod.API_CALL
+            },
+            {
+                "name": "save_to_url",
+                "pattern": r"(?i)save\s+(?:to|at)\s+(?:url|https?://)",
+                "severity": 0.6,
+                "method": ExfiltrationMethod.API_CALL
+            },
+            # LOW SEVERITY (0.3-0.4) - Monitoring only
+            {
+                "name": "webhook_mention",
+                "pattern": r"(?i)\bwebhook\b",
+                "severity": 0.3,
+                "method": ExfiltrationMethod.API_CALL
+            },
+            {
+                "name": "callback_mention",
+                "pattern": r"(?i)\bcallback\b",
+                "severity": 0.3,
                 "method": ExfiltrationMethod.API_CALL
             }
         ]

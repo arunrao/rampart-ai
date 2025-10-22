@@ -20,6 +20,7 @@ from api.routes.auth import get_current_user, TokenData
 from api.routes.rampart_keys import get_current_user_from_api_key, track_api_key_usage
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models.prompt_injection_detector import get_prompt_injection_detector
+from security.data_exfiltration_monitor import DataExfiltrationMonitor
 
 router = APIRouter()
 security = HTTPBearer()
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize hybrid detector (lazy loaded)
 _detector = None
+_exfiltration_monitor = None
 
 
 def get_detector():
@@ -41,6 +43,15 @@ def get_detector():
         )
         logger.info(f"✓ Security detector initialized: {detector_type}")
     return _detector
+
+
+def get_exfiltration_monitor():
+    """Get or create data exfiltration monitor instance"""
+    global _exfiltration_monitor
+    if _exfiltration_monitor is None:
+        _exfiltration_monitor = DataExfiltrationMonitor()
+        logger.info("✓ DataExfiltrationMonitor initialized")
+    return _exfiltration_monitor
 
 
 # Dual authentication dependency - supports both JWT and API key
@@ -198,39 +209,60 @@ def analyze_prompt_injection(content: str, fast_mode: bool = False) -> Optional[
 
 
 def analyze_data_exfiltration(content: str) -> Optional[ThreatDetection]:
-    """Analyze content for data exfiltration attempts"""
-    # Check for suspicious patterns
-    exfiltration_patterns = [
-        "send to",
-        "send this",
-        "email this",
-        "email to",
-        "post to",
-        "upload to",
-        "save to url",
-        "webhook",
-        "http://",
-        "https://",
-        "curl",
-        "wget"
-    ]
+    """
+    Analyze content for data exfiltration attempts using comprehensive DataExfiltrationMonitor
     
-    content_lower = content.lower()
-    detected_patterns = [p for p in exfiltration_patterns if p in content_lower]
-    
-    if detected_patterns:
-        # Each pattern adds 0.5 - single strong pattern is enough to block
-        confidence = min(len(detected_patterns) * 0.5, 1.0)
-        severity = SeverityLevel.CRITICAL if confidence >= 0.7 else SeverityLevel.HIGH
+    This now detects:
+    - Credentials (API keys, passwords, JWT, AWS keys, private keys)
+    - Exfiltration commands (email, send, curl, wget, etc.) with granular severity
+    - Database connection strings
+    - Internal IP addresses
+    - URLs with suspicious parameters
+    - Trusted domain whitelisting
+    """
+    try:
+        monitor = get_exfiltration_monitor()
+        result = monitor.scan_output(content)
         
-        return ThreatDetection(
-            threat_type=ThreatType.DATA_EXFILTRATION,
-            severity=severity,
-            confidence=confidence,
-            description="Potential data exfiltration attempt detected",
-            indicators=detected_patterns,
-            recommended_action="block"
-        )
+        if result["has_exfiltration_risk"]:
+            # Map recommendation to severity
+            severity_map = {
+                "BLOCK": SeverityLevel.CRITICAL,
+                "REDACT": SeverityLevel.HIGH,
+                "FLAG": SeverityLevel.MEDIUM,
+                "ALLOW": SeverityLevel.LOW
+            }
+            
+            # Collect all indicators for detailed reporting
+            indicators = []
+            
+            # Add sensitive data found
+            for item in result["sensitive_data_found"]:
+                indicators.append(f"{item['type']}: {item['matched_text']}")
+            
+            # Add exfiltration indicators
+            for item in result["exfiltration_indicators"]:
+                indicators.append(f"{item['name']} ({item['method']})")
+            
+            # Add URL analysis
+            for url in result.get("urls_found", []):
+                if url.get("has_suspicious_params") or not url.get("is_trusted"):
+                    indicators.append(f"suspicious_url: {url['domain']}")
+            
+            return ThreatDetection(
+                threat_type=ThreatType.DATA_EXFILTRATION,
+                severity=severity_map.get(result["recommendation"], SeverityLevel.MEDIUM),
+                confidence=result["risk_score"],
+                description="Potential data exfiltration attempt detected",
+                indicators=indicators or ["data_exfiltration_risk"],
+                recommended_action=result["recommendation"].lower()
+            )
+    
+    except Exception as e:
+        logger.error(f"Data exfiltration detection failed: {e}")
+        # Fall back to simple detection on error
+        pass
+    
     return None
 
 
