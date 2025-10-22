@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>AI Security & Observability Platform</strong> | v0.2.2
+  <strong>AI Security & Observability Platform</strong> | v0.2.4
 </p>
 
 <p align="center">
