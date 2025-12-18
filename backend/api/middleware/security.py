@@ -24,6 +24,8 @@ class APIKeyEnforcementMiddleware(BaseHTTPMiddleware):
         "/openapi.json",
         "/redoc",
         "/api/v1/health",
+        "/api/v1/health/ready",  # Kubernetes readiness probe
+        "/api/v1/health/live",   # Kubernetes liveness probe
         "/api/v1/docs",
         "/api/v1/openapi.json",
         "/api/v1/redoc",
