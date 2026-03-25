@@ -7,7 +7,7 @@ Features:
 - ONNX-optimized for 3x faster inference
 - Configurable fast_mode for latency-sensitive scenarios
 """
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Protocol, Tuple, cast
 import re
 from dataclasses import dataclass
 import logging
@@ -19,6 +19,13 @@ warnings.filterwarnings("ignore", message=".*scaled_dot_product_attention.*")
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.onnx")
 
 logger = logging.getLogger(__name__)
+
+
+class PromptInjectionDetectorLike(Protocol):
+    """Structural type for regex / DeBERTa / hybrid detectors."""
+
+    def detect(self, text: str, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        ...
 
 
 @dataclass
@@ -290,20 +297,32 @@ class PromptInjectionDetector:
         }
 
 
-# Try to import transformers for DeBERTa
+# Try to import transformers for DeBERTa (optional; may be absent in type-check / minimal env)
 try:
-    from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+    from transformers import (  # pyright: ignore[reportMissingImports]
+        AutoModelForSequenceClassification,
+        AutoTokenizer,
+        pipeline,
+    )
+
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
+    pipeline = cast(Any, None)
+    AutoTokenizer = cast(Any, None)
+    AutoModelForSequenceClassification = cast(Any, None)
     logger.warning("Transformers not available. DeBERTa detection disabled.")
 
 # Try to import ONNX optimization
 try:
-    from optimum.onnxruntime import ORTModelForSequenceClassification
+    from optimum.onnxruntime import (  # pyright: ignore[reportMissingImports]
+        ORTModelForSequenceClassification,
+    )
+
     ONNX_AVAILABLE = True
 except ImportError:
     ONNX_AVAILABLE = False
+    ORTModelForSequenceClassification = cast(Any, None)
     logger.info("ONNX optimization not available. Using PyTorch for DeBERTa.")
 
 
@@ -329,7 +348,7 @@ class DeBERTaPromptInjectionDetector:
     
     def __init__(
         self,
-        model_name: str = None,
+        model_name: Optional[str] = None,
         use_onnx: bool = True,
         device: int = -1,  # -1 for CPU, 0 for GPU
         confidence_threshold: float = 0.75
@@ -559,7 +578,7 @@ class HybridPromptInjectionDetector:
         self.regex_detector = PromptInjectionDetector()
         
         # Initialize DeBERTa detector (optional)
-        self.deberta_detector = None
+        self.deberta_detector: Optional[DeBERTaPromptInjectionDetector] = None
         self.use_deberta = use_deberta and TRANSFORMERS_AVAILABLE
         self.regex_threshold = regex_threshold
         
@@ -614,7 +633,8 @@ class HybridPromptInjectionDetector:
         # Stage 2: DeBERTa deep analysis
         import time
         start_time = time.time()
-        
+
+        assert self.deberta_detector is not None
         deberta_result = self.deberta_detector.detect(text)
         deberta_latency = (time.time() - start_time) * 1000  # Convert to ms
         
@@ -744,15 +764,15 @@ def get_prompt_injection_detector(
     detector_type: str = "hybrid",
     use_onnx: bool = True,
     **kwargs
-) -> object:
+) -> PromptInjectionDetectorLike:
     """
     Get or create prompt injection detector instance
-    
+
     Args:
         detector_type: "regex", "deberta", or "hybrid" (recommended)
         use_onnx: Use ONNX optimization for DeBERTa
         **kwargs: Additional detector-specific arguments
-    
+
     Returns:
         Detector instance
     """

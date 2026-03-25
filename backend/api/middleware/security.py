@@ -31,6 +31,7 @@ class APIKeyEnforcementMiddleware(BaseHTTPMiddleware):
         "/api/v1/redoc",
         "/api/v1/auth/google/login",
         "/api/v1/auth/callback/google",
+        "/api/v1/providers/supported",
     }
     
     # Path prefixes that don't require authentication

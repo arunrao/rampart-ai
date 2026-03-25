@@ -19,6 +19,17 @@ if not DATABASE_URL:
 _engine: Optional[Engine] = None
 
 
+def reset_engine() -> None:
+    """Dispose and clear the global engine (used by tests to rebind DATABASE_URL)."""
+    global _engine
+    if _engine is not None:
+        try:
+            _engine.dispose()
+        except Exception:
+            pass
+    _engine = None
+
+
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
@@ -142,7 +153,7 @@ def init_users_table() -> None:
         is_sqlite = "sqlite" in DATABASE_URL.lower()
         
         if is_sqlite:
-            # SQLite version
+            # SQLite: one statement per execute (sqlite3 driver limitation)
             conn.execute(
                 text(
                     """
@@ -153,10 +164,12 @@ def init_users_table() -> None:
                       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                       is_active BOOLEAN NOT NULL DEFAULT 1
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+                    )
                     """
                 )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
             )
         else:
             # PostgreSQL version
@@ -170,10 +183,12 @@ def init_users_table() -> None:
                       created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
                       updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
                       is_active BOOLEAN NOT NULL DEFAULT TRUE
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+                    )
                     """
                 )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
             )
         conn.commit()
 
@@ -185,7 +200,6 @@ def init_provider_keys_table() -> None:
         is_sqlite = "sqlite" in DATABASE_URL.lower()
         
         if is_sqlite:
-            # SQLite version
             conn.execute(
                 text(
                     """
@@ -199,13 +213,16 @@ def init_provider_keys_table() -> None:
                       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                       UNIQUE(user_id, provider)
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_provider_keys_user_id ON provider_keys(user_id);
+                    )
                     """
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_provider_keys_user_id ON provider_keys(user_id)"
+                )
+            )
         else:
-            # PostgreSQL version
             conn.execute(
                 text(
                     """
@@ -219,9 +236,13 @@ def init_provider_keys_table() -> None:
                       created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
                       updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
                       UNIQUE(user_id, provider)
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_provider_keys_user_id ON provider_keys(user_id);
+                    )
                     """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_provider_keys_user_id ON provider_keys(user_id)"
                 )
             )
         conn.commit()
@@ -234,7 +255,6 @@ def init_rampart_api_keys_table() -> None:
         is_sqlite = "sqlite" in DATABASE_URL.lower()
         
         if is_sqlite:
-            # SQLite version
             conn.execute(
                 text(
                     """
@@ -254,15 +274,26 @@ def init_rampart_api_keys_table() -> None:
                       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                       expires_at TIMESTAMP,
                       UNIQUE(key_prefix, key_hash)
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_user_id ON rampart_api_keys(user_id);
-                    CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_key_hash ON rampart_api_keys(key_hash);
-                    CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_active ON rampart_api_keys(is_active);
+                    )
                     """
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_user_id ON rampart_api_keys(user_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_key_hash ON rampart_api_keys(key_hash)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_active ON rampart_api_keys(is_active)"
+                )
+            )
         else:
-            # PostgreSQL version
             conn.execute(
                 text(
                     """
@@ -282,11 +313,23 @@ def init_rampart_api_keys_table() -> None:
                       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                       expires_at TIMESTAMP,
                       UNIQUE(key_prefix, key_hash)
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_user_id ON rampart_api_keys(user_id);
-                    CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_key_hash ON rampart_api_keys(key_hash);
-                    CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_active ON rampart_api_keys(is_active);
+                    )
                     """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_user_id ON rampart_api_keys(user_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_key_hash ON rampart_api_keys(key_hash)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_active ON rampart_api_keys(is_active)"
                 )
             )
         conn.commit()
@@ -299,7 +342,6 @@ def init_rampart_api_key_usage_table() -> None:
         is_sqlite = "sqlite" in DATABASE_URL.lower()
         
         if is_sqlite:
-            # SQLite version
             conn.execute(
                 text(
                     """
@@ -313,14 +355,21 @@ def init_rampart_api_key_usage_table() -> None:
                       date DATE NOT NULL DEFAULT (date('now')),
                       hour INTEGER NOT NULL DEFAULT (cast(strftime('%H', 'now') as integer)),
                       UNIQUE(api_key_id, endpoint, date, hour)
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_api_key_usage_date ON rampart_api_key_usage(date);
-                    CREATE INDEX IF NOT EXISTS idx_api_key_usage_key_id ON rampart_api_key_usage(api_key_id);
+                    )
                     """
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_api_key_usage_date ON rampart_api_key_usage(date)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_api_key_usage_key_id ON rampart_api_key_usage(api_key_id)"
+                )
+            )
         else:
-            # PostgreSQL version
             conn.execute(
                 text(
                     """
@@ -334,10 +383,18 @@ def init_rampart_api_key_usage_table() -> None:
                       date DATE NOT NULL DEFAULT CURRENT_DATE,
                       hour INTEGER NOT NULL DEFAULT EXTRACT(HOUR FROM CURRENT_TIMESTAMP),
                       UNIQUE(api_key_id, endpoint, date, hour)
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_api_key_usage_date ON rampart_api_key_usage(date);
-                    CREATE INDEX IF NOT EXISTS idx_api_key_usage_key_id ON rampart_api_key_usage(api_key_id);
+                    )
                     """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_api_key_usage_date ON rampart_api_key_usage(date)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_api_key_usage_key_id ON rampart_api_key_usage(api_key_id)"
                 )
             )
         conn.commit()

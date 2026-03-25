@@ -1,16 +1,11 @@
-import json
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
-from api.main import app
 import api.routes.content_filter as cf
 
 
-client = TestClient(app)
-
-
-def test_redaction_uses_label_for_custom_pattern():
+def test_redaction_uses_label_for_custom_pattern(client: TestClient, auth_headers: dict):
     content = "Order ID: ORD-ABC-12345"
     body: Dict[str, Any] = {
         "content": content,
@@ -18,7 +13,7 @@ def test_redaction_uses_label_for_custom_pattern():
         "redact": True,
         "custom_pii_patterns": {"order_id": r"ORD-[A-Z]{3}-\d{5}"},
     }
-    r = client.post("/api/v1/filter", json=body)
+    r = client.post("/api/v1/filter", json=body, headers=auth_headers)
     assert r.status_code == 200, r.text
     data = r.json()
     # Expect label-based token
@@ -26,7 +21,7 @@ def test_redaction_uses_label_for_custom_pattern():
     assert any(e.get("label") == "order_id" for e in data["pii_detected"])  # typed label present
 
 
-def test_defaults_merge_applies_when_request_omits(monkeypatch):
+def test_defaults_merge_applies_when_request_omits(monkeypatch, client: TestClient, auth_headers: dict):
     # Defaults say redact=True; request omits redact
     def fake_get_default(key: str):
         if key == "content_filter_defaults":
@@ -35,17 +30,30 @@ def test_defaults_merge_applies_when_request_omits(monkeypatch):
 
     monkeypatch.setattr("api.routes.content_filter.get_default", fake_get_default, raising=False)
 
+    fake_entity = cf.PIIEntity(
+        type=cf.PIIType.EMAIL,
+        value="alice@example.com",
+        start=12,
+        end=27,
+        confidence=0.99,
+        label="email",
+    )
+
+    monkeypatch.setattr(
+        "api.routes.content_filter.detect_pii",
+        lambda text, custom_patterns=None: [fake_entity],
+    )
+
     content = "Email me at alice@example.com"
     body = {"content": content, "filters": ["pii"]}
-    r = client.post("/api/v1/filter", json=body)
+    r = client.post("/api/v1/filter", json=body, headers=auth_headers)
     assert r.status_code == 200
     data = r.json()
-    # Because defaults force redact, filtered_content should be present
     assert data["filtered_content"] is not None
     assert "[EMAIL_REDACTED]" in data["filtered_content"]
 
 
-def test_presidio_path_selected_when_flag_true(monkeypatch):
+def test_presidio_path_selected_when_flag_true(monkeypatch, client: TestClient, auth_headers: dict):
     # Mock presidio path to avoid heavy initialization
     def fake_detect_pii_presidio(text: str):
         # Return one fake entity and a deterministic redaction string
@@ -70,7 +78,7 @@ def test_presidio_path_selected_when_flag_true(monkeypatch):
         "redact": True,
         "use_presidio_pii": True,
     }
-    r = client.post("/api/v1/filter", json=body)
+    r = client.post("/api/v1/filter", json=body, headers=auth_headers)
     assert r.status_code == 200
     data = r.json()
     # Since we mocked presidio, ensure its redaction is used

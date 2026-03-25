@@ -19,7 +19,10 @@ import logging
 from api.routes.auth import get_current_user, TokenData
 from api.routes.rampart_keys import get_current_user_from_api_key, track_api_key_usage
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models.prompt_injection_detector import get_prompt_injection_detector
+from models.prompt_injection_detector import (
+    PromptInjectionDetectorLike,
+    get_prompt_injection_detector,
+)
 from security.data_exfiltration_monitor import DataExfiltrationMonitor
 
 router = APIRouter()
@@ -27,11 +30,11 @@ security = HTTPBearer()
 logger = logging.getLogger(__name__)
 
 # Initialize hybrid detector (lazy loaded)
-_detector = None
+_detector: Optional[PromptInjectionDetectorLike] = None
 _exfiltration_monitor = None
 
 
-def get_detector():
+def get_detector() -> PromptInjectionDetectorLike:
     """Get or create detector instance"""
     global _detector
     if _detector is None:

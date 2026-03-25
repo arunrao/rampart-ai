@@ -8,20 +8,23 @@ from datetime import datetime
 from uuid import UUID, uuid4
 from enum import Enum
 from cryptography.fernet import Fernet
-import os
 import base64
+from functools import lru_cache
 
+from api.config import get_settings
 from api.routes.auth import get_current_user, TokenData
 from api.db import get_conn
 from sqlalchemy import text
 
 router = APIRouter()
 
-# Initialize encryption key
-KEY_ENCRYPTION_SECRET = os.getenv("KEY_ENCRYPTION_SECRET", "dev-encryption-key-change-in-production-32-chars")
-# Ensure key is 32 bytes for Fernet
-encryption_key = base64.urlsafe_b64encode(KEY_ENCRYPTION_SECRET.encode()[:32].ljust(32, b'0'))
-cipher = Fernet(encryption_key)
+
+@lru_cache(maxsize=1)
+def _fernet_cipher() -> Fernet:
+    """Fernet instance derived from Settings.key_encryption_secret (single source of truth)."""
+    secret = get_settings().key_encryption_secret
+    encryption_key = base64.urlsafe_b64encode(secret.encode()[:32].ljust(32, b"0"))
+    return Fernet(encryption_key)
 
 
 class ProviderType(str, Enum):
@@ -58,12 +61,12 @@ class APIKeyTest(BaseModel):
 
 def encrypt_api_key(api_key: str) -> str:
     """Encrypt API key for storage"""
-    return cipher.encrypt(api_key.encode()).decode()
+    return _fernet_cipher().encrypt(api_key.encode()).decode()
 
 
 def decrypt_api_key(encrypted_key: str) -> str:
     """Decrypt API key from storage"""
-    return cipher.decrypt(encrypted_key.encode()).decode()
+    return _fernet_cipher().decrypt(encrypted_key.encode()).decode()
 
 
 def mask_api_key(api_key: str) -> str:

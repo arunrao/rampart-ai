@@ -145,7 +145,7 @@ class ContentFilterRequest(BaseModel):
     """Request for content filtering"""
     content: str
     filters: List[FilterType] = Field(default_factory=lambda: [FilterType.PII, FilterType.TOXICITY, FilterType.PROMPT_INJECTION])
-    redact: bool = False
+    redact: Optional[bool] = None
     trace_id: Optional[UUID] = None
     # Dynamic options
     custom_pii_patterns: Optional[Dict[str, str]] = Field(
@@ -612,25 +612,31 @@ async def filter_content(
     )
     with ctx as span:  # type: ignore
         start_time = time.time()
-        if _OTEL and span is not None:
-            try:
-                span.set_attribute("filters", ",".join(request.filters))
-                span.set_attribute("redact", bool(request.redact))
-                span.set_attribute("toxicity.threshold", float(request.toxicity_threshold))
-                span.set_attribute("toxicity.use_model", bool(request.use_model_toxicity))
-                span.set_attribute("pii.custom_patterns", int(bool(request.custom_pii_patterns)))
-            except Exception:
-                pass
 
         # Load defaults from DB (if any) and merge with request
         defaults = get_default("content_filter_defaults") if _DB_OK else None
-        redact = request.redact if request.redact is not None else bool(defaults.get("redact", False)) if defaults else request.redact
+        if request.redact is not None:
+            redact = request.redact
+        elif defaults and "redact" in defaults:
+            redact = bool(defaults["redact"])
+        else:
+            redact = False
         custom_pii_patterns = request.custom_pii_patterns or (defaults.get("custom_pii_patterns") if defaults else None)
         custom_toxic_words = request.custom_toxic_words or (defaults.get("custom_toxic_words") if defaults else None)
         custom_severe_words = request.custom_severe_words or (defaults.get("custom_severe_words") if defaults else None)
         toxicity_threshold = request.toxicity_threshold if request.toxicity_threshold is not None else (defaults.get("toxicity_threshold", 0.7) if defaults else 0.7)
         use_model_toxicity = request.use_model_toxicity or (defaults.get("use_model_toxicity") if defaults else False)
         use_presidio_pii = request.use_presidio_pii or (defaults.get("use_presidio_pii") if defaults else False)
+
+        if _OTEL and span is not None:
+            try:
+                span.set_attribute("filters", ",".join(request.filters))
+                span.set_attribute("redact", bool(redact))
+                span.set_attribute("toxicity.threshold", float(request.toxicity_threshold))
+                span.set_attribute("toxicity.use_model", bool(request.use_model_toxicity))
+                span.set_attribute("pii.custom_patterns", int(bool(request.custom_pii_patterns)))
+            except Exception:
+                pass
 
         pii_entities: List[PIIEntity] = []
         toxicity_scores = None
@@ -755,7 +761,7 @@ async def filter_content(
         try:
             if _PROM and METRIC_FILTER_REQUESTS is not None:
                 METRIC_FILTER_REQUESTS.labels(
-                    redact=str(bool(request.redact)).lower(),
+                    redact=str(bool(redact)).lower(),
                     use_model_toxicity=str(bool(getattr(request, "use_model_toxicity", False))).lower(),
                 ).inc()
             if _PROM and METRIC_FILTER_LATENCY_MS is not None:

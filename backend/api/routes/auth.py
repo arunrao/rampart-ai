@@ -126,7 +126,7 @@ async def get_current_user_info(current_user: TokenData = Depends(get_current_us
                 FROM users
                 WHERE id = :user_id
             """),
-            {"user_id": current_user.user_id}
+            {"user_id": str(current_user.user_id)}
         ).fetchone()
         
         if not result:
@@ -157,7 +157,7 @@ async def refresh_token(current_user: TokenData = Depends(get_current_user)):
                 FROM users
                 WHERE id = :user_id
             """),
-            {"user_id": current_user.user_id}
+            {"user_id": str(current_user.user_id)}
         ).fetchone()
         
         if not result or not result[3]:  # Check is_active

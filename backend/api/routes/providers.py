@@ -63,7 +63,7 @@ async def list_provider_keys(current_user: TokenData = Depends(get_current_user)
                 WHERE user_id = :user_id
                 ORDER BY created_at DESC
             """),
-            {"user_id": current_user.user_id}
+            {"user_id": str(current_user.user_id)}
         ).fetchall()
         
         keys = []
@@ -97,7 +97,7 @@ async def get_provider_key(
                 FROM provider_keys
                 WHERE user_id = :user_id AND provider = :provider
             """),
-            {"user_id": current_user.user_id, "provider": provider.value}
+            {"user_id": str(current_user.user_id), "provider": provider.value}
         ).fetchone()
         
         if not result:
@@ -152,7 +152,7 @@ async def set_provider_key(
                 SELECT id FROM provider_keys
                 WHERE user_id = :user_id AND provider = :provider
             """),
-            {"user_id": current_user.user_id, "provider": provider.value}
+            {"user_id": str(current_user.user_id), "provider": provider.value}
         ).fetchone()
         
         if existing:
@@ -168,7 +168,7 @@ async def set_provider_key(
                     RETURNING id, provider, last_4, status, created_at, updated_at
                 """),
                 {
-                    "user_id": current_user.user_id,
+                    "user_id": str(current_user.user_id),
                     "provider": provider.value,
                     "key_encrypted": encrypted_key,
                     "last_4": last_4,
@@ -184,7 +184,7 @@ async def set_provider_key(
                     RETURNING id, provider, last_4, status, created_at, updated_at
                 """),
                 {
-                    "user_id": current_user.user_id,
+                    "user_id": str(current_user.user_id),
                     "provider": provider.value,
                     "key_encrypted": encrypted_key,
                     "last_4": last_4,
@@ -192,9 +192,9 @@ async def set_provider_key(
                 }
             )
         
-        conn.commit()
         row = result.fetchone()
-        
+        conn.commit()
+
         return ProviderKeyResponse(
             id=row[0],
             provider=ProviderType(row[1]),
@@ -222,11 +222,12 @@ async def delete_provider_key(
                 WHERE user_id = :user_id AND provider = :provider
                 RETURNING id
             """),
-            {"user_id": current_user.user_id, "provider": provider.value}
+            {"user_id": str(current_user.user_id), "provider": provider.value}
         )
+        deleted = result.fetchone()
         conn.commit()
-        
-        if not result.fetchone():
+
+        if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No {provider.value} key found"
@@ -275,7 +276,7 @@ def get_user_provider_key(user_id: UUID, provider: str) -> Optional[str]:
                 FROM provider_keys
                 WHERE user_id = :user_id AND provider = :provider AND status = 'active'
             """),
-            {"user_id": user_id, "provider": provider}
+            {"user_id": str(user_id), "provider": provider}
         ).fetchone()
         
         if not result:

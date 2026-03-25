@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     app_name: str = "Project Rampart"
     app_version: str = "0.2.3"
     environment: str = "development"
-    debug: bool = True
+    debug: bool = False
     secret_key: str
     
     # API Configuration

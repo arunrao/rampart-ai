@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, Response
 from contextlib import asynccontextmanager
 import time
 import logging
+from typing import Any, Callable, Optional
 
 from api.config import get_settings
 from api.routes import health, auth, providers, traces, security, policies, content_filter, test_scenarios, api_keys, rampart_keys
@@ -19,25 +20,56 @@ from api.middleware import (
 )
 
 # OpenTelemetry setup (safe if not available)
+_OTEL_AVAILABLE = False
 try:
+    import os as _otel_os
+
     from opentelemetry import trace as otel_trace
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+    _otel_settings = get_settings()
+    _otel_resource = Resource.create(
+        {
+            "service.name": _otel_settings.app_name,
+            "service.version": _otel_settings.app_version,
+            "deployment.environment": _otel_settings.environment,
+        }
+    )
+    _otel_provider = TracerProvider(resource=_otel_resource)
+    _otlp_endpoint = _otel_os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if _otlp_endpoint:
+        _otlp_insecure = _otel_os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        _otel_exporter = OTLPSpanExporter(endpoint=_otlp_endpoint, insecure=_otlp_insecure)
+    else:
+        _otel_exporter = ConsoleSpanExporter()
+    _otel_processor = BatchSpanProcessor(_otel_exporter)
+    _otel_provider.add_span_processor(_otel_processor)
+    otel_trace.set_tracer_provider(_otel_provider)
     _OTEL_AVAILABLE = True
 except Exception:  # pragma: no cover
     _OTEL_AVAILABLE = False
 
 # Prometheus metrics setup (safe if not available)
+_PROM_AVAILABLE = False
+_prom_registry: Optional[Any] = None
+_prom_generate_latest: Optional[Callable[[], bytes]] = None
+_prom_content_type: Optional[str] = None
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
-    _PROM_AVAILABLE = True
+
     _prom_registry = CollectorRegistry()
+    _prom_generate_latest = generate_latest
+    _prom_content_type = CONTENT_TYPE_LATEST
+    _PROM_AVAILABLE = True
 except Exception:  # pragma: no cover
-    _PROM_AVAILABLE = False
-    _prom_registry = None
+    pass
 
 # Configure logging
 logging.basicConfig(
@@ -47,25 +79,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
-
-# Initialize OTEL tracer provider (console exporter by default)
-if _OTEL_AVAILABLE:
-    resource = Resource.create({
-        "service.name": settings.app_name,
-        "service.version": settings.app_version,
-        "deployment.environment": settings.environment,
-    })
-    provider = TracerProvider(resource=resource)
-    # Choose exporter: OTLP if endpoint configured, else console
-    import os
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if otlp_endpoint:
-        exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
-    else:
-        exporter = ConsoleSpanExporter()
-    processor = BatchSpanProcessor(exporter)
-    provider.add_span_processor(processor)
-    otel_trace.set_tracer_provider(provider)
 
 
 @asynccontextmanager
@@ -164,6 +177,8 @@ app.add_middleware(
 # Instrument FastAPI app for tracing
 if _OTEL_AVAILABLE:
     try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
         FastAPIInstrumentor.instrument_app(app)
     except Exception:
         pass
@@ -208,10 +223,15 @@ app.include_router(rampart_keys.router, prefix=settings.api_prefix, tags=["rampa
 # Prometheus metrics endpoint
 @app.get("/metrics")
 async def metrics():
-    if not _PROM_AVAILABLE or _prom_registry is None:
+    if (
+        not _PROM_AVAILABLE
+        or _prom_registry is None
+        or _prom_generate_latest is None
+        or _prom_content_type is None
+    ):
         return JSONResponse({"error": "prometheus_client not available"}, status_code=503)
-    data = generate_latest()  # default global registry
-    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+    data = _prom_generate_latest()
+    return Response(content=data, media_type=_prom_content_type)
 
 
 @app.get("/")

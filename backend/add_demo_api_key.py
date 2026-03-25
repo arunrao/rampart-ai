@@ -7,17 +7,27 @@ import os
 sys.path.append('/app')
 
 from api.db import get_conn
-from api.routes.rampart_keys import generate_rampart_api_key, get_key_preview
+from api.routes.rampart_keys import get_key_preview
 from sqlalchemy import text
 from uuid import uuid4
 from datetime import datetime
 import bcrypt
 
 def add_demo_api_key():
-    """Add the demo API key to the database"""
-    # The API key you're using
-    api_key = "rmp_live_q-j5HB17ojOaVP2wOt63jGwNyXxMTLQ600NbQ-o3a-U"
-    
+    """Add the demo API key to the database.
+
+    Set DEMO_RAMPART_API_KEY to the full key (e.g. rmp_live_...); never commit real keys.
+    """
+    api_key = os.environ.get("DEMO_RAMPART_API_KEY", "").strip()
+    if not api_key:
+        print(
+            "Missing DEMO_RAMPART_API_KEY. Export the full Rampart API key you want to register, "
+            "then run this script again."
+        )
+        return
+
+    key_preview = get_key_preview(api_key)
+
     # Get the test user ID
     with get_conn() as conn:
         user_result = conn.execute(
@@ -31,10 +41,10 @@ def add_demo_api_key():
         
         user_id = user_result[0]
         
-        # Check if this API key already exists
+        # Check if this API key already exists (by stable preview string)
         existing = conn.execute(
-            text("SELECT id FROM rampart_api_keys WHERE key_preview LIKE :preview"),
-            {"preview": "%q-j5HB17%"}
+            text("SELECT id FROM rampart_api_keys WHERE key_preview = :preview"),
+            {"preview": key_preview}
         ).fetchone()
         
         if existing:
@@ -43,7 +53,6 @@ def add_demo_api_key():
         
         # Create hash for the API key
         key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
-        key_preview = get_key_preview(api_key)
         key_prefix = "rmp_live_"
         
         # Insert the API key
