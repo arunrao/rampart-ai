@@ -24,10 +24,24 @@ COPY . .
 # Create model cache directory
 RUN mkdir -p /app/.cache/huggingface
 
-# Model warmup (optional: pre-download models to speed up first run)
-# GLiNER model warmup (~200MB)
-# Uncomment to pre-download the default "balanced" model during build
-# RUN python -c "from models.pii_detector_gliner import get_gliner_detector; get_gliner_detector(model_type='balanced').detect('warmup')" || true
+# Pre-download GLiNER edge model (ONNX UINT8, ~197MB) so there is no cold-start
+# download on first request.  The knowledgator edge model is PII-specialized and
+# ships a quantized ONNX file — faster and smaller than the old gravitee default.
+RUN python -c "\
+from models.pii_detector_gliner import GLiNERPIIDetector; \
+d = GLiNERPIIDetector(model_type='edge', use_onnx=True); \
+_ = d.model; \
+print('✓ GLiNER edge model (ONNX) pre-downloaded')" \
+  || echo "⚠ GLiNER pre-download skipped (will download on first use)"
+
+# Toxicity model (unitary/toxic-bert, ~420MB, multi-label Jigsaw fine-tune)
+# Replaces citizenlab/distilbert which had false positives on common short phrases.
+# Pre-downloading eliminates cold-start download delay.
+RUN python -c "\
+from models.toxicity_detector import detect_toxicity; \
+detect_toxicity('warmup'); \
+print('✓ Toxicity model (unitary/toxic-bert) pre-downloaded')" \
+  || echo "⚠ Toxicity pre-download skipped (will download on first use)"
 
 # DeBERTa model warmup (~300MB with ONNX)
 # Pre-downloads ProtectAI DeBERTa model for prompt injection detection

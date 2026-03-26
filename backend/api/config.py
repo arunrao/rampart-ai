@@ -12,10 +12,10 @@ class Settings(BaseSettings):
     
     # Application
     app_name: str = "Project Rampart"
-    app_version: str = "0.2.3"
+    app_version: str = "0.2.6"
     environment: str = "development"
     debug: bool = False
-    secret_key: str
+    secret_key: str = Field(default="")
     
     # API Configuration
     api_host: str = "0.0.0.0"
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     
     # Database
-    database_url: str
+    database_url: str = Field(default="sqlite:///./rampart.db")
     redis_url: str = "redis://localhost:6379/0"
     
     # LLM Providers
@@ -37,10 +37,10 @@ class Settings(BaseSettings):
     frontend_url: str = Field(default="http://localhost:3000")
     
     # Security
-    jwt_secret_key: str
+    jwt_secret_key: str = Field(default="")
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
-    key_encryption_secret: str  # For encrypting user API keys
+    key_encryption_secret: str = Field(default="")  # For encrypting user API keys
     
     # Content Filtering
     max_token_limit: int = 4096
@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     prompt_injection_use_onnx: bool = True  # Use ONNX optimization for 3x faster inference
     prompt_injection_fast_mode: bool = False  # Skip DeBERTa for low-latency
     prompt_injection_threshold: float = 0.75  # Confidence threshold for blocking
+    # When True (default), PII / toxicity / prompt-injection work runs concurrently (lower wall time).
+    content_filter_parallel_ml: bool = True
+    # Unauthenticated playground for marketing / self-host (disable in strict production)
+    enable_public_filter_demo: bool = True
+    public_filter_demo_max_chars: int = 8000
     
     # Observability
     enable_tracing: bool = True
@@ -66,7 +71,17 @@ class Settings(BaseSettings):
     # Rate Limiting
     rate_limit_per_minute: int = 1000
     rate_limit_per_hour: int = 10000
-    
+
+    # Super-admin access (comma-separated list of email addresses)
+    # e.g. SUPER_ADMIN_EMAILS=you@example.com,colleague@example.com
+    super_admin_emails: str = ""
+
+    # Audit logging — set to false if you handle access logs externally
+    # (your own SIEM, Datadog, CloudWatch, etc.). The admin /stats endpoint
+    # degrades gracefully when this is off; only the request-volume metrics
+    # are unavailable. Policy config-change events are also suppressed.
+    audit_log_enabled: bool = True
+
     # CORS Configuration
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:8080,http://localhost:8081"
     

@@ -425,14 +425,14 @@ class DeBERTaPromptInjectionDetector:
                     self.model_name
                 )
             
-            # Create pipeline
+            # Create pipeline (ORTModel isn't in transformers' pipeline() stubs; runtime supports it.)
             self._pipeline = pipeline(
                 "text-classification",
-                model=model,
+                model=cast(Any, model),
                 tokenizer=self._tokenizer,
                 device=self.device,
                 max_length=self.MAX_LENGTH,
-                truncation=True
+                truncation=True,
             )
             
             logger.info(f"✓ DeBERTa detector ready (device: {'GPU' if self.device >= 0 else 'CPU'})")

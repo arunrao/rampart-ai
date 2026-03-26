@@ -2,6 +2,157 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Marketing / public-site theme
+ * --------------------
+ * Change colors, gradients, and surfaces here to rebrand the landing, docs, and try pages.
+ * Components use Tailwind `marketing-*` colors (see tailwind.config.ts) and the utilities below.
+ */
+@layer base {
+  :root {
+    /* Page background: gradient stops (HSL components, space-separated) */
+    --marketing-bg-a: 210 45% 98%;
+    --marketing-bg-b: 214 55% 96%;
+    --marketing-bg-c: 230 50% 96%;
+    --marketing-nav-surface: 0 0% 100%;
+    --marketing-nav-alpha: 0.74;
+    --marketing-elevated: 0 0% 100%;
+    --marketing-surface: 210 40% 96%;
+    --marketing-border: 214.3 31.8% 91.4%;
+    --marketing-muted: 215.4 16.3% 46.9%;
+    --marketing-subtle: 215 14% 40%;
+    --marketing-heading: 222.2 47.4% 11.2%;
+    --marketing-body: 222.2 28% 32%;
+    --marketing-accent: 221.2 83.2% 53.3%;
+    --marketing-accent-fg: 210 40% 98%;
+    --marketing-hero-from: 221.2 83.2% 53.3%;
+    --marketing-hero-to: 262 83% 58%;
+    --marketing-wordmark-from: 221.2 83.2% 48%;
+    --marketing-wordmark-to: 239.2 84% 56%;
+    --marketing-btn-from: 221.2 83.2% 53.3%;
+    --marketing-btn-to: 239.2 80% 56%;
+    --marketing-btn-secondary-from: 160 84% 32%;
+    --marketing-btn-secondary-to: 172 66% 38%;
+    --marketing-badge-bg: 214 95% 93%;
+    --marketing-badge-fg: 221 70% 32%;
+    --marketing-code-bg: 210 40% 97%;
+    --marketing-code-fg: 222.2 47.4% 15%;
+    --marketing-footer-bg: 222.2 47.4% 11.2%;
+    --marketing-footer-fg: 213 31% 91%;
+    --marketing-footer-muted: 215 16% 62%;
+    --marketing-cta-from: 221.2 83.2% 52%;
+    --marketing-cta-to: 247 75% 58%;
+    --marketing-link-hover: 221.2 83.2% 45%;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --marketing-bg-a: 224 71% 5%;
+      --marketing-bg-b: 222 47% 9%;
+      --marketing-bg-c: 230 40% 14%;
+      --marketing-nav-surface: 224 71% 5%;
+      --marketing-nav-alpha: 0.78;
+      --marketing-elevated: 224 71% 6%;
+      --marketing-surface: 223 47% 12%;
+      --marketing-border: 216 34% 17%;
+      --marketing-muted: 215.4 16.3% 56.9%;
+      --marketing-subtle: 215 18% 70%;
+      --marketing-heading: 213 31% 91%;
+      --marketing-body: 213 22% 82%;
+      --marketing-accent: 217.2 91.2% 59.8%;
+      --marketing-accent-fg: 222.2 47.4% 11.2%;
+      --marketing-hero-from: 217.2 91.2% 59.8%;
+      --marketing-hero-to: 263 85% 72%;
+      --marketing-wordmark-from: 217.2 91.2% 62%;
+      --marketing-wordmark-to: 263 80% 72%;
+      --marketing-btn-from: 217.2 88% 58%;
+      --marketing-btn-to: 262 78% 62%;
+      --marketing-btn-secondary-from: 160 72% 42%;
+      --marketing-btn-secondary-to: 172 55% 45%;
+      --marketing-badge-bg: 223 47% 14%;
+      --marketing-badge-fg: 214 95% 82%;
+      --marketing-code-bg: 224 40% 10%;
+      --marketing-code-fg: 213 31% 91%;
+      --marketing-footer-bg: 226 55% 6%;
+      --marketing-footer-fg: 213 25% 88%;
+      --marketing-footer-muted: 215 14% 48%;
+      --marketing-cta-from: 217.2 88% 54%;
+      --marketing-cta-to: 252 72% 58%;
+      --marketing-link-hover: 217.2 91.2% 68%;
+    }
+  }
+
+  .dark {
+    --marketing-bg-a: 224 71% 5%;
+    --marketing-bg-b: 222 47% 9%;
+    --marketing-bg-c: 230 40% 14%;
+    --marketing-nav-surface: 224 71% 5%;
+    --marketing-nav-alpha: 0.78;
+    --marketing-elevated: 224 71% 6%;
+    --marketing-surface: 223 47% 12%;
+    --marketing-border: 216 34% 17%;
+    --marketing-muted: 215.4 16.3% 56.9%;
+    --marketing-subtle: 215 18% 70%;
+    --marketing-heading: 213 31% 91%;
+    --marketing-body: 213 22% 82%;
+    --marketing-accent: 217.2 91.2% 59.8%;
+    --marketing-accent-fg: 222.2 47.4% 11.2%;
+    --marketing-hero-from: 217.2 91.2% 59.8%;
+    --marketing-hero-to: 263 85% 72%;
+    --marketing-wordmark-from: 217.2 91.2% 62%;
+    --marketing-wordmark-to: 263 80% 72%;
+    --marketing-btn-from: 217.2 88% 58%;
+    --marketing-btn-to: 262 78% 62%;
+    --marketing-btn-secondary-from: 160 72% 42%;
+    --marketing-btn-secondary-to: 172 55% 45%;
+    --marketing-badge-bg: 223 47% 14%;
+    --marketing-badge-fg: 214 95% 82%;
+    --marketing-code-bg: 224 40% 10%;
+    --marketing-code-fg: 213 31% 91%;
+    --marketing-footer-bg: 226 55% 6%;
+    --marketing-footer-fg: 213 25% 88%;
+    --marketing-footer-muted: 215 14% 48%;
+    --marketing-cta-from: 217.2 88% 54%;
+    --marketing-cta-to: 252 72% 58%;
+    --marketing-link-hover: 217.2 91.2% 68%;
+  }
+
+  .light {
+    --marketing-bg-a: 210 45% 98%;
+    --marketing-bg-b: 214 55% 96%;
+    --marketing-bg-c: 230 50% 96%;
+    --marketing-nav-surface: 0 0% 100%;
+    --marketing-nav-alpha: 0.74;
+    --marketing-elevated: 0 0% 100%;
+    --marketing-surface: 210 40% 96%;
+    --marketing-border: 214.3 31.8% 91.4%;
+    --marketing-muted: 215.4 16.3% 46.9%;
+    --marketing-subtle: 215 14% 40%;
+    --marketing-heading: 222.2 47.4% 11.2%;
+    --marketing-body: 222.2 28% 32%;
+    --marketing-accent: 221.2 83.2% 53.3%;
+    --marketing-accent-fg: 210 40% 98%;
+    --marketing-hero-from: 221.2 83.2% 53.3%;
+    --marketing-hero-to: 262 83% 58%;
+    --marketing-wordmark-from: 221.2 83.2% 48%;
+    --marketing-wordmark-to: 239.2 84% 56%;
+    --marketing-btn-from: 221.2 83.2% 53.3%;
+    --marketing-btn-to: 239.2 80% 56%;
+    --marketing-btn-secondary-from: 160 84% 32%;
+    --marketing-btn-secondary-to: 172 66% 38%;
+    --marketing-badge-bg: 214 95% 93%;
+    --marketing-badge-fg: 221 70% 32%;
+    --marketing-code-bg: 210 40% 97%;
+    --marketing-code-fg: 222.2 47.4% 15%;
+    --marketing-footer-bg: 222.2 47.4% 11.2%;
+    --marketing-footer-fg: 213 31% 91%;
+    --marketing-footer-muted: 215 16% 62%;
+    --marketing-cta-from: 221.2 83.2% 52%;
+    --marketing-cta-to: 247 75% 58%;
+    --marketing-link-hover: 221.2 83.2% 45%;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -104,5 +255,89 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .bg-marketing-page {
+    background-image: linear-gradient(
+      165deg,
+      hsl(var(--marketing-bg-a)) 0%,
+      hsl(var(--marketing-bg-b)) 45%,
+      hsl(var(--marketing-bg-c)) 100%
+    );
+  }
+
+  .marketing-nav-bar {
+    @apply sticky top-0 z-50 border-b backdrop-blur-lg;
+    background-color: hsl(var(--marketing-nav-surface) / var(--marketing-nav-alpha));
+    border-color: hsl(var(--marketing-border));
+  }
+
+  .text-gradient-marketing-hero {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--marketing-hero-from)),
+      hsl(var(--marketing-hero-to))
+    );
+  }
+
+  .text-gradient-marketing-wordmark {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--marketing-wordmark-from)),
+      hsl(var(--marketing-wordmark-to))
+    );
+  }
+
+  .marketing-btn-primary {
+    @apply text-white border-0 shadow-md transition-[filter,transform];
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--marketing-btn-from)),
+      hsl(var(--marketing-btn-to))
+    );
+  }
+  .marketing-btn-primary:hover {
+    filter: brightness(1.06);
+  }
+
+  .marketing-btn-secondary {
+    @apply text-white border-0 shadow-md transition-[filter,transform];
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--marketing-btn-secondary-from)),
+      hsl(var(--marketing-btn-secondary-to))
+    );
+  }
+  .marketing-btn-secondary:hover {
+    filter: brightness(1.06);
+  }
+
+  .bg-marketing-cta-band {
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--marketing-cta-from)),
+      hsl(var(--marketing-cta-to))
+    );
+  }
+
+  .bg-marketing-footer {
+    background-color: hsl(var(--marketing-footer-bg));
+    color: hsl(var(--marketing-footer-fg));
+  }
+
+  .text-marketing-footer-muted {
+    color: hsl(var(--marketing-footer-muted));
+  }
+
+  .marketing-link {
+    @apply transition-colors;
+    color: hsl(var(--marketing-body));
+  }
+  .marketing-link:hover {
+    color: hsl(var(--marketing-link-hover));
   }
 }

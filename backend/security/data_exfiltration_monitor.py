@@ -3,7 +3,7 @@ Data Exfiltration Detection and Monitoring
 Detects attempts to leak sensitive data through LLM outputs
 """
 import re
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
 from enum import Enum
 
@@ -124,7 +124,9 @@ class DataExfiltrationMonitor:
             # HIGH SEVERITY (0.7-0.8) - Targeted exfiltration
             {
                 "name": "targeted_email_command",
-                "pattern": r"(?i)(send|email|forward|mail)\s+(?:this|it|the\s+\w+)\s+to\s+[\w\.-]+@[\w\.-]+",
+                # Matches patterns like "email this to addr@x.com", "send this conversation to addr@x.com",
+                # "forward the report to addr@x.com" — allows arbitrary words between the verb and the address.
+                "pattern": r"(?i)\b(send|email|forward|mail)\b[^.\n]{0,80}[\w\.-]+@[\w\.-]+\.\w+",
                 "severity": 0.75,
                 "method": ExfiltrationMethod.EMAIL_COMMAND
             },
@@ -180,18 +182,18 @@ class DataExfiltrationMonitor:
             }
         ]
     
-    def scan_output(self, output: str, context: Dict = None) -> Dict:
+    def scan_output(self, output: str, context: Optional[Dict] = None) -> Dict:
         """
-        Scan LLM output for data exfiltration attempts
-        
-        Args:
-            output: The LLM output to scan
-            context: Additional context (user_id, session_id, etc.)
-        
-        Returns:
-            Detection results
+        Scan LLM output for data exfiltration attempts.
+
+        Detection is two-tier:
+        1. Regex — structured credentials (API keys, JWT, AWS keys, DB URLs, private keys,
+           internal IPs). These are deterministic formats where regex outperforms NER models.
+        2. GLiNER — context-aware PII (names, addresses, medical data, credit cards, PHI).
+           Uses the same model that is already warmed up by the content filter. Falls back
+           silently when GLiNER is unavailable.
         """
-        results = {
+        results: Dict = {
             "has_exfiltration_risk": False,
             "risk_score": 0.0,
             "sensitive_data_found": [],
@@ -199,8 +201,8 @@ class DataExfiltrationMonitor:
             "urls_found": [],
             "recommendation": "ALLOW"
         }
-        
-        # Check for sensitive data
+
+        # --- Tier 1: Regex — structured credentials ---
         for pattern in self.sensitive_patterns:
             matches = re.finditer(pattern.pattern, output)
             for match in matches:
@@ -212,7 +214,28 @@ class DataExfiltrationMonitor:
                     "position": match.span()
                 })
         
-        # Check for exfiltration indicators
+        # --- Tier 2: GLiNER — context-aware PII ---
+        # Catches names, addresses, PHI, credit cards, and other human-readable PII that
+        # regex misses.  Uses the same already-warmed-up model as the content filter.
+        # Severity is lower (0.7) than hard credentials because context matters more here.
+        _GLINER_PII_SEVERITY = 0.7
+        try:
+            from models.pii_detector_gliner import detect_pii_gliner
+            gliner_entities = detect_pii_gliner(output)
+            for entity in gliner_entities:
+                results["sensitive_data_found"].append({
+                    "type": entity.type,
+                    "category": "pii_gliner",
+                    "severity": _GLINER_PII_SEVERITY,
+                    "matched_text": entity.value[:50],
+                    "confidence": entity.confidence,
+                    "position": (entity.start, entity.end),
+                })
+        except Exception:
+            # GLiNER unavailable or errored — regex tier still runs
+            pass
+
+        # --- Exfiltration command indicators (regex) ---
         for indicator in self.exfiltration_indicators:
             matches = re.finditer(indicator["pattern"], output)
             for match in matches:

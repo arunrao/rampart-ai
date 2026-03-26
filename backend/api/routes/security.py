@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 from enum import Enum
 import os
 import logging
+import threading
 
 from api.routes.auth import get_current_user, TokenData
 from api.routes.rampart_keys import get_current_user_from_api_key, track_api_key_usage
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize hybrid detector (lazy loaded)
 _detector: Optional[PromptInjectionDetectorLike] = None
+_detector_lock = threading.Lock()
 _exfiltration_monitor = None
 
 
@@ -38,13 +40,15 @@ def get_detector() -> PromptInjectionDetectorLike:
     """Get or create detector instance"""
     global _detector
     if _detector is None:
-        detector_type = os.getenv("PROMPT_INJECTION_DETECTOR", "hybrid")
-        use_onnx = os.getenv("PROMPT_INJECTION_USE_ONNX", "true").lower() == "true"
-        _detector = get_prompt_injection_detector(
-            detector_type=detector_type,
-            use_onnx=use_onnx
-        )
-        logger.info(f"✓ Security detector initialized: {detector_type}")
+        with _detector_lock:
+            if _detector is None:
+                detector_type = os.getenv("PROMPT_INJECTION_DETECTOR", "hybrid")
+                use_onnx = os.getenv("PROMPT_INJECTION_USE_ONNX", "true").lower() == "true"
+                _detector = get_prompt_injection_detector(
+                    detector_type=detector_type,
+                    use_onnx=use_onnx
+                )
+                logger.info(f"✓ Security detector initialized: {detector_type}")
     return _detector
 
 
@@ -308,6 +312,7 @@ async def analyze_security(
     auth_data = Depends(get_authenticated_user)
 ):
     """Analyze content for security threats"""
+    import asyncio
     import time
     import hashlib
     
@@ -316,22 +321,27 @@ async def analyze_security(
     # Generate content hash
     content_hash = hashlib.sha256(request.content.encode()).hexdigest()[:16]
     
-    # Run security analyses
+    # Run security analyses — each detector is a blocking sync function so we
+    # offload to the thread pool and gather concurrently (mirrors content_filter).
     threats = []
     
     if request.context_type in ["input", "system_prompt"]:
-        # Check for prompt injection
-        if threat := analyze_prompt_injection(request.content):
-            threats.append(threat)
-        
-        # Check for jailbreak
-        if threat := analyze_jailbreak(request.content):
-            threats.append(threat)
+        # Injection (DeBERTa ~50ms) and jailbreak (regex <1ms) run in parallel.
+        injection_result, jailbreak_result = await asyncio.gather(
+            asyncio.to_thread(analyze_prompt_injection, request.content),
+            asyncio.to_thread(analyze_jailbreak, request.content),
+        )
+        if injection_result:
+            threats.append(injection_result)
+        if jailbreak_result:
+            threats.append(jailbreak_result)
     
     if request.context_type == "output":
-        # Check for data exfiltration
-        if threat := analyze_data_exfiltration(request.content):
-            threats.append(threat)
+        # Exfiltration monitor now includes a GLiNER call (~10–150ms) so must
+        # run off the event loop.
+        exfil_result = await asyncio.to_thread(analyze_data_exfiltration, request.content)
+        if exfil_result:
+            threats.append(exfil_result)
     
     # Calculate risk score
     risk_score = 0.0

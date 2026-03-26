@@ -35,8 +35,13 @@ export default function Navigation() {
     return null;
   }
 
+  // Full-bleed playground (own chrome); not the authenticated app shell
+  if (pathname === "/try") {
+    return null;
+  }
+
   // Don't show navigation on landing page or docs for non-authenticated users
-  if (!loading && !user && (pathname === "/" || pathname === "/landing" || pathname === "/docs")) {
+  if (!loading && !user && (pathname === "/" || pathname === "/landing" || pathname?.startsWith("/docs"))) {
     return null;
   }
 

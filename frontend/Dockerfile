@@ -44,8 +44,8 @@ RUN adduser --system --uid 1001 nextjs
 # Copy public directory if it exists
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# Public folder is optional - copy if exists
-RUN mkdir -p ./public
+# Static assets from /public (if present)
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Set correct permissions
 RUN chown -R nextjs:nodejs /app

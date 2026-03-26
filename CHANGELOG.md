@@ -5,6 +5,63 @@ All notable changes to Project Rampart will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-03-26
+
+### Changed
+
+- **ML toxicity detection** — Replaced the old heuristic word-count scorer and optional `detoxify` (RoBERTa, ~500 MB, separate package) with [`unitary/toxic-bert`](https://huggingface.co/unitary/toxic-bert):
+  - **Well-calibrated**: the citizenlab/distilbert model had false positives on common short phrases ("hello world", "the quick brown fox"). `unitary/toxic-bert` — the same BERT backbone used by the Detoxify library — scores these at < 0.01.
+  - **Multi-label**: 6 Jigsaw categories (toxic, severe_toxic, obscene, threat, insult, identity_hate); the main `toxicity` score is P(toxic)
+  - **No new dependency**: uses `transformers` already in the stack — the `detoxify` package is no longer needed
+  - **Pre-downloaded in Docker image**: baked into Dockerfile model warm-up to eliminate cold start
+
+- **`ToxicityScore` response schema** — Simplified to reflect what the model actually computes:
+  ```json
+  {
+    "toxicity": 0.87,
+    "is_toxic": true,
+    "label": "toxic"
+  }
+  ```
+  The old Jigsaw sub-fields (`severe_toxicity`, `obscene`, `threat`, `insult`, `identity_attack`) were phantom values derived from `toxicity * constant` and have been removed.
+
+- **`ContentFilterRequest`** — Removed `use_model_toxicity` (ML is now always used), `custom_toxic_words`, and `custom_severe_words` (heuristic-era fields).
+
+- **`TemplatePackConfig`** — Removed `use_model_toxicity` field; all packs now use the ML model by default.
+
+### Added
+
+- `backend/models/toxicity_detector.py` — New standalone toxicity module with `detect_toxicity()` and `warmup()` helpers.
+- Toxicity model warmup added to `main.py` startup lifecycle alongside DeBERTa and GLiNER.
+
+### Fixed
+
+- `test_scenarios.py` toxicity score access used `.get()` on a Pydantic model — now uses attribute access (`.toxicity`, `.is_toxic`).
+
+## [0.2.5] - 2026-03-25
+
+### Performance
+
+- **Parallel content-filter pipeline (`/api/v1/filter`)** — When multiple filters run (PII, toxicity, prompt injection), heavy work is **overlapped** instead of running strictly back-to-back:
+  - Each phase uses **`asyncio.to_thread`** so CPU-bound GLiNER / DeBERTa / toxicity work does not block the event loop.
+  - With **`content_filter_parallel_ml=true`** (default), enabled phases are started together and **`asyncio.gather`** waits for all of them, so **wall time is close to the slowest phase**, not the sum of every phase.
+  - Set **`CONTENT_FILTER_PARALLEL_ML=false`** to force sequential execution (useful for debugging or very constrained thread pools).
+  - **Files**: `backend/api/routes/content_filter.py` (core pipeline), `backend/api/config.py` (`content_filter_parallel_ml`), OpenAPI docstring on `filter_content` describes the behavior.
+
+### Added
+
+- **On-site documentation shell** — Integration guide and API reference are first-class pages under `/docs` with a persistent sidebar (Quick start, REST API overview, Security, Deployment, Developer integration, API reference), shared chrome with OpenAPI / Playground / GitHub shortcuts, and mobile drawer navigation.
+- **Bundled doc sources** — `frontend/content/documentation/` holds Markdown used at build time; `npm run sync-docs` in `frontend/` copies from repo `docs/`.
+- **Public filter demo API** — `POST /api/v1/filter/demo` for an unauthenticated marketing/self-host **Try Rampart** flow, gated by **`ENABLE_PUBLIC_FILTER_DEMO`** (default on in config; tighten for strict production). Wired through security middleware public paths.
+- **Frontend playground** — `/try` page exercises the demo endpoint with shared marketing theme tokens.
+- **Database bootstrap SQL** — `backend/api/migrations/00_init_rampart_database.sql` for one-shot Postgres user/database setup outside Compose.
+
+### Changed
+
+- **Marketing navigation** — Developer dropdown links to in-app doc routes; centralized theme utilities in `frontend/app/globals.css`; version badge on marketing shell.
+- **Security middleware** — Public path allowlist extended for **`/api/v1/filter/demo`**, Kubernetes **`/api/v1/health/ready`** and **`/api/v1/health/live`**, and related docs/OpenAPI routes as needed for probes and gateways.
+- **Version metadata** — `app_version` / OpenAPI / health reporting, frontend package, and package lock set to **0.2.5**; `backend/api/__version__` aligned with the release series.
+
 ## [0.2.4] - 2025-10-22
 
 ### Enhanced

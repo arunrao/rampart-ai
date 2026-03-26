@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>AI Security & Observability Platform</strong> | v0.2.4
+  <strong>AI Security & Observability Platform</strong> | v0.2.5
 </p>
 
 <p align="center">
@@ -64,7 +64,7 @@ Application → Rampart Security Gateway → LLM Provider (OpenAI/Anthropic/etc.
 ### Backend (Python/FastAPI)
 - **Security Layer**: Pattern-based and heuristic detection for prompt injection, jailbreaks, and data exfiltration
 - **Policy Engine**: Rule-based evaluation with compliance templates (GDPR, HIPAA, SOC 2)
-- **Content Filter**: Unified endpoint with prompt injection detection, PII detection (GLiNER ML-based), and toxicity analysis
+- **Content Filter**: Unified endpoint with prompt injection detection, PII detection (GLiNER ML-based), and toxicity analysis (DistilBERT ML-based)
 - **LLM Proxy**: Unified interface for OpenAI, Anthropic with automatic security checks
 - **Authentication**: JWT-based auth with bcrypt password hashing (work factor: 12)
 - **Storage**: PostgreSQL for production, SQLite for development
@@ -147,7 +147,7 @@ Scans LLM outputs for sensitive data leakage and exfiltration attempts:
 **Filters Available:**
 - ✅ **Prompt Injection Detection** (Hybrid DeBERTa + Regex, 92% accuracy)
 - ✅ **PII Detection** (GLiNER ML-Based, 93% accuracy)
-- ✅ **Toxicity Analysis** (Heuristic/Detoxify-based)
+- ✅ **Toxicity Analysis** (ML-based, unitary/toxic-bert, multi-label Jigsaw fine-tune)
 
 **PII Detection (GLiNER ML-Based):**
 
@@ -205,9 +205,10 @@ cd backend && python test_gliner_pii.py
 ```
 
 **Toxicity Analysis:**
-- Heuristic-based scoring (production should use Detoxify or Perspective API)
-- Categories: general toxicity, severe toxicity, obscenity, threats, insults, identity attacks
-- Configurable thresholds per organization
+- ML-based scoring using `unitary/toxic-bert` (BERT-base, ~420 MB, multi-label Jigsaw fine-tune)
+- 6 categories: toxic, severe_toxic, obscene, threat, insult, identity_hate
+- Returns P(toxic) as the main score; well-calibrated — no false positives on common phrases
+- Configurable threshold per organization (default: 0.7)
 
 **Redaction Modes:**
 - Full redaction: Replace with `[REDACTED]`
@@ -488,10 +489,8 @@ Rampart detects and mitigates **50+ specific attack behaviors** across input val
 **Behavior**: Content contains toxicity, profanity, or hate speech.
 
 **Categories Detected:**
-- ✅ General toxicity (configurable threshold)
-- ✅ Severe toxicity
-- ✅ Obscenity and profanity
-- ✅ Threats and violence
+- ✅ General toxicity (ML probability score, configurable threshold)
+- ✅ Binary label (`toxic` | `not_toxic`) for clear decision-making
 - ✅ Insults and personal attacks
 - ✅ Identity-based hate speech
 
@@ -1102,11 +1101,9 @@ Rampart currently focuses on **securing LLM API interactions** - the request/res
 - ✅ Observability and cost tracking
 
 ### Current Limitations
-1. **Pattern-based detection**: Uses regex heuristics; production should integrate ML models (e.g., fine-tuned transformers)
-2. **In-memory storage**: Default uses in-memory dicts; production requires PostgreSQL
-3. **Basic toxicity detection**: Heuristic-based; integrate Detoxify or Perspective API for production
-4. **No streaming support**: Currently batch-only; streaming responses planned
-5. **Limited to API layer**: Does not yet address agentic AI security (see roadmap below)
+1. **In-memory storage**: Default uses in-memory dicts; production requires PostgreSQL
+2. **No streaming support**: Currently batch-only; streaming responses planned
+3. **Limited to API layer**: Does not yet address agentic AI security (see roadmap below)
 
 ---
 
@@ -1342,7 +1339,7 @@ Below is a concise, standards-aligned comparison of Rampart with adjacent offeri
 - **Rampart (this project)**
   - **Focus**: Self-hosted, developer-first platform for app-layer LLM security and observability. Wraps LLM calls with input/output checks, policy, and tracing.
   - **Strengths**: Open code; secure LLM proxy (`backend/integrations/llm_proxy.py`); prompt injection detection (`backend/models/prompt_injection_detector.py`); data exfiltration controls (`backend/security/data_exfiltration_monitor.py`); content filter and policy engine (`backend/api/routes/content_filter.py`, `backend/api/routes/policies.py`); observability and cost tracking; production hardening.
-  - **Limitations**: Heuristic detectors; no streaming yet; agentic controls (memory/tool/goal) are roadmap Phase 2; cryptographic trust layer is research/Phase 3.
+  - **Limitations**: No streaming yet; agentic controls (memory/tool/goal) are roadmap Phase 2; cryptographic trust layer is research/Phase 3.
   - **Best fit**: Teams needing on-prem/open components to secure product LLM workflows with policy + observability aligned to OWASP/NIST.
 
 - **Lakera**
@@ -1446,7 +1443,7 @@ Below is a concise, standards-aligned comparison of Rampart with adjacent offeri
 
 | Category | Examples | Primary focus | Strengths | Limitations vs Rampart | Fit with Rampart |
 |---|---|---|---|---|---|
-| App-layer LLM security (self-hosted) | Rampart | Proxy + policy + input/output checks + observability | Open code, provider-agnostic enforcement, audit | Heuristic detectors; agentic/crypto layers in roadmap | Core gateway for OWASP/NIST-aligned controls |
+| App-layer LLM security (self-hosted) | Rampart | Proxy + policy + input/output checks + observability | Open code, provider-agnostic enforcement, audit | Agentic/crypto layers in roadmap | Core gateway for OWASP/NIST-aligned controls |
 | Guardrails/testing | Lakera, Prompt Armor, NeMo Guardrails, Guardrails.ai, LlamaGuard, Rebuff | Prompt/response safety signals, rails, testing | Fast integration, strong safety signals | Not a full policy/observability/exfiltration plane | Use as signals into Rampart decisions |
 | Provider-native guardrails | AWS Bedrock, Vertex AI, Azure AI Content Safety, OpenAI Moderation, Anthropic Filters | Safety/moderation at provider | Native ecosystem features | Cloud/model lock-in; limited cross-provider view | Combine with Rampart for org-wide policy and tracing |
 | API security (generic) | Cequence | API/bot defense | Mature API protection | Not specialized for LLM reasoning/content risks | Layer under Rampart’s LLM-specific checks |

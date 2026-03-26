@@ -1,5 +1,6 @@
 services:
-  # PostgreSQL Database
+  # PostgreSQL — persistent volume for production-style / full-stack deploys.
+  # If host port 5432 is already taken, set POSTGRES_PUBLISH_PORT=5433 in .env
   postgres:
     image: postgres:15-alpine
     container_name: rampart-postgres
@@ -8,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rampart_dev_password}
       POSTGRES_DB: rampart
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PUBLISH_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,12 +18,12 @@ services:
       timeout: 3s
       retries: 10
 
-  # Redis Cache
+  # Redis — if host 6379 is in use (another Redis container), set REDIS_PUBLISH_PORT=6380 in .env
   redis:
     image: redis:7-alpine
     container_name: rampart-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PUBLISH_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -40,8 +41,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Core Configuration
-      - DATABASE_URL=postgresql://rampart:${POSTGRES_PASSWORD:-rampart_dev_password}@postgres:5432/rampart
+      # Default: bundled Postgres on the Compose network. Override only if DB is outside Compose:
+      # COMPOSE_DATABASE_URL=postgresql://rampart:secret@host.docker.internal:5432/rampart
+      - DATABASE_URL=${COMPOSE_DATABASE_URL:-postgresql://rampart:${POSTGRES_PASSWORD:-rampart_dev_password}@postgres:5432/rampart}
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production-min-32-chars-long}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret-key-change-in-production-min-32}
@@ -70,6 +72,8 @@ services:
       # Environment
       - ENVIRONMENT=development
       - DEBUG=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

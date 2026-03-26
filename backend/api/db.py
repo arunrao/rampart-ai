@@ -400,6 +400,233 @@ def init_rampart_api_key_usage_table() -> None:
         conn.commit()
 
 
+def init_policies_table() -> None:
+    """Create policies table for persistent policy storage."""
+    with get_conn() as conn:
+        is_sqlite = "sqlite" in DATABASE_URL.lower()
+
+        if is_sqlite:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS policies (
+                      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+                      user_id TEXT NOT NULL,
+                      name TEXT NOT NULL,
+                      description TEXT,
+                      policy_type TEXT NOT NULL,
+                      rules TEXT NOT NULL DEFAULT '[]',
+                      enabled BOOLEAN NOT NULL DEFAULT 1,
+                      tags TEXT NOT NULL DEFAULT '[]',
+                      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      created_by TEXT,
+                      version INTEGER NOT NULL DEFAULT 1
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_policies_user_id ON policies(user_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_policies_enabled ON policies(enabled)")
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS policies (
+                      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                      user_id UUID NOT NULL,
+                      name TEXT NOT NULL,
+                      description TEXT,
+                      policy_type TEXT NOT NULL,
+                      rules JSONB NOT NULL DEFAULT '[]',
+                      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                      tags TEXT[] NOT NULL DEFAULT '{}',
+                      created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                      updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                      created_by TEXT,
+                      version INTEGER NOT NULL DEFAULT 1
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_policies_user_id ON policies(user_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_policies_enabled ON policies(enabled)")
+            )
+        conn.commit()
+
+
+def init_audit_logs_table() -> None:
+    """Create audit_logs table for SOC2 Type II compliance."""
+    with get_conn() as conn:
+        is_sqlite = "sqlite" in DATABASE_URL.lower()
+
+        if is_sqlite:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS audit_logs (
+                      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+                      timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      user_id TEXT,
+                      api_key_preview TEXT,
+                      endpoint TEXT NOT NULL,
+                      http_method TEXT NOT NULL,
+                      ip_address TEXT NOT NULL,
+                      status_code INTEGER,
+                      processing_time_ms REAL,
+                      event_type TEXT NOT NULL DEFAULT 'api_request',
+                      metadata TEXT NOT NULL DEFAULT '{}'
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_audit_logs_event_type ON audit_logs(event_type)")
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS audit_logs (
+                      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                      timestamp TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                      user_id TEXT,
+                      api_key_preview TEXT,
+                      endpoint TEXT NOT NULL,
+                      http_method TEXT NOT NULL,
+                      ip_address TEXT NOT NULL,
+                      status_code INTEGER,
+                      processing_time_ms REAL,
+                      event_type TEXT NOT NULL DEFAULT 'api_request',
+                      metadata JSONB NOT NULL DEFAULT '{}'
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)")
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_audit_logs_event_type ON audit_logs(event_type)")
+            )
+        conn.commit()
+
+
+def migrate_add_template_pack_column() -> None:
+    """Add template_pack column to rampart_api_keys if not already present."""
+    with get_conn() as conn:
+        is_sqlite = "sqlite" in DATABASE_URL.lower()
+        try:
+            if is_sqlite:
+                # Check via PRAGMA whether column already exists
+                cols = conn.execute(
+                    text("PRAGMA table_info(rampart_api_keys)")
+                ).fetchall()
+                col_names = [row[1] for row in cols]
+                if "template_pack" not in col_names:
+                    conn.execute(
+                        text("ALTER TABLE rampart_api_keys ADD COLUMN template_pack TEXT")
+                    )
+                    conn.commit()
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE rampart_api_keys ADD COLUMN IF NOT EXISTS template_pack VARCHAR(50)"
+                    )
+                )
+                conn.commit()
+        except Exception:
+            pass
+
+
+def insert_audit_log(
+    endpoint: str,
+    http_method: str,
+    ip_address: str,
+    event_type: str = "api_request",
+    user_id: Optional[str] = None,
+    api_key_preview: Optional[str] = None,
+    status_code: Optional[int] = None,
+    processing_time_ms: Optional[float] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Insert a single audit log entry. Silently ignores errors to never block requests."""
+    try:
+        with get_conn() as conn:
+            is_sqlite = "sqlite" in DATABASE_URL.lower()
+            meta_str = json.dumps(metadata or {})
+
+            if is_sqlite:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO audit_logs
+                          (user_id, api_key_preview, endpoint, http_method, ip_address,
+                           status_code, processing_time_ms, event_type, metadata, timestamp)
+                        VALUES
+                          (:user_id, :api_key_preview, :endpoint, :http_method, :ip_address,
+                           :status_code, :processing_time_ms, :event_type, :metadata, :ts)
+                        """
+                    ),
+                    {
+                        "user_id": user_id,
+                        "api_key_preview": api_key_preview,
+                        "endpoint": endpoint,
+                        "http_method": http_method,
+                        "ip_address": ip_address,
+                        "status_code": status_code,
+                        "processing_time_ms": processing_time_ms,
+                        "event_type": event_type,
+                        "metadata": meta_str,
+                        "ts": datetime.utcnow(),
+                    },
+                )
+            else:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO audit_logs
+                          (user_id, api_key_preview, endpoint, http_method, ip_address,
+                           status_code, processing_time_ms, event_type, metadata, timestamp)
+                        VALUES
+                          (:user_id, :api_key_preview, :endpoint, :http_method, :ip_address,
+                           :status_code, :processing_time_ms, :event_type, :metadata::jsonb, :ts)
+                        """
+                    ),
+                    {
+                        "user_id": user_id,
+                        "api_key_preview": api_key_preview,
+                        "endpoint": endpoint,
+                        "http_method": http_method,
+                        "ip_address": ip_address,
+                        "status_code": status_code,
+                        "processing_time_ms": processing_time_ms,
+                        "event_type": event_type,
+                        "metadata": meta_str,
+                        "ts": datetime.utcnow(),
+                    },
+                )
+            conn.commit()
+    except Exception:
+        pass
+
+
 def init_all_tables() -> None:
     """Initialize all database tables."""
     init_defaults_table()
@@ -407,3 +634,6 @@ def init_all_tables() -> None:
     init_provider_keys_table()
     init_rampart_api_keys_table()
     init_rampart_api_key_usage_table()
+    init_policies_table()
+    init_audit_logs_table()
+    migrate_add_template_pack_column()

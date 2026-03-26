@@ -5,13 +5,14 @@ import Link from "next/link";
 import { Shield, Activity, Lock, Code, Github, BookOpen, Zap, CheckCircle, ArrowRight, Terminal, FileCode } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import MarketingNav from "@/components/marketing/MarketingNav";
+import { getApiDocsUrl, getGithubRepoUrl } from "@/lib/site";
 
 export default function LandingPage() {
   const [selectedExample, setSelectedExample] = useState("python");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  // Use environment variable for API URL, fallback for local dev
-  const apiDocsUrl = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/docs` : 'http://localhost:8000/api/v1/docs';
+
+  const apiDocsUrl = getApiDocsUrl();
+  const githubUrl = getGithubRepoUrl();
 
   const codeExamples = {
     python: `import requests
@@ -79,125 +80,68 @@ if (!result.is_safe) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      {/* Navigation */}
-      <nav className="sticky top-0 z-50 backdrop-blur-lg bg-white/70 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800">
-        <div className="container mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <Shield className="h-6 sm:h-8 w-6 sm:w-8 text-blue-600 dark:text-blue-400" />
-            <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              Rampart
-            </span>
-            <span className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 ml-2">v0.2.2</span>
-          </div>
-          
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-4 lg:space-x-6">
-            <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer" className="text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center space-x-1">
-              <Github className="h-5 w-5" />
-              <span>GitHub</span>
-            </a>
-            <Link href="/docs" className="text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center space-x-1">
-              <BookOpen className="h-5 w-5" />
-              <span>Docs</span>
-            </Link>
-            <Link href={apiDocsUrl} className="text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center space-x-1">
-              <Code className="h-5 w-5" />
-              <span>API</span>
-            </Link>
-            <Link href="/login">
-              <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/30">
-                Sign In
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
-
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
-            aria-label="Toggle menu"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {mobileMenuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-          </button>
-        </div>
-
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <div className="container mx-auto px-4 py-4 space-y-3">
-              <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer" className="flex items-center space-x-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 py-2">
-                <Github className="h-5 w-5" />
-                <span>GitHub</span>
-              </a>
-              <Link href="/docs" className="flex items-center space-x-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 py-2">
-                <BookOpen className="h-5 w-5" />
-                <span>Docs</span>
-              </Link>
-              <Link href={apiDocsUrl} className="flex items-center space-x-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 py-2">
-                <Code className="h-5 w-5" />
-                <span>API</span>
-              </Link>
-              <Link href="/login" className="block">
-                <Button className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/30">
-                  Sign In
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
-          </div>
-        )}
-      </nav>
+    <div className="min-h-screen bg-marketing-page text-marketing-heading">
+      <MarketingNav />
 
       {/* Hero Section */}
       <section className="container mx-auto px-4 sm:px-6 py-12 sm:py-20 lg:py-32">
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
           <div>
-            <div className="inline-flex items-center space-x-2 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 px-4 py-2 rounded-full text-sm font-medium mb-6">
-              <Zap className="h-4 w-4" />
-              <span>95% Prompt Injection Detection Accuracy</span>
+            <div className="inline-flex items-center space-x-2 bg-marketing-badge-bg text-marketing-badge-fg px-4 py-2 rounded-full text-sm font-semibold mb-6">
+              <Terminal className="h-4 w-4" aria-hidden />
+              <span>Developers: REST API, OpenAPI docs, and guides—front and center</span>
             </div>
             
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-slate-900 dark:text-white mb-6 leading-tight">
-              Building with LLMs?
-              <span className="block bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                Protect Your Users.
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-marketing-heading mb-6 leading-tight tracking-tight">
+              The trust layer for your LLM stack.
+              <span className="block text-gradient-marketing-hero mt-1">
+                Ship secure AI with one integration.
               </span>
             </h1>
             
-            <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
-              You're building innovative LLM-powered solutions. But are you protecting your application 
-              and users from emerging AI threats?
+            <p className="text-lg sm:text-xl text-marketing-body mb-4 leading-relaxed">
+              Filter prompt injection, PII, and toxic content before it hits your model—and monitor what
+              comes back out. HTTP APIs you can call from any runtime; documentation you can actually find.
             </p>
             
-            <p className="text-lg text-slate-500 dark:text-slate-400 mb-8">
-              <strong className="text-slate-700 dark:text-slate-200">Rampart</strong> is your security layer—detect prompt injection, 
-              prevent data exfiltration, and block malicious prompts with a single API call.
+            <p className="text-lg text-marketing-muted mb-8">
+              Start in the{" "}
+              <Link href="/docs" className="font-semibold text-marketing-accent hover:underline underline-offset-4">
+                developer docs
+              </Link>
+              , experiment in the{" "}
+              <Link href="/try" className="font-semibold text-marketing-accent hover:underline underline-offset-4">
+                live playground
+              </Link>
+              , or open the{" "}
+              <a href={apiDocsUrl} className="font-semibold text-marketing-accent hover:underline underline-offset-4" target="_blank" rel="noopener noreferrer">
+                interactive API
+              </a>
+              .
             </p>
             
-            <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mb-8">
-              <Link href="/login">
-                <Button size="lg" className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-xl shadow-blue-500/30 text-lg px-8">
-                  Get Started Free
+            <div className="flex flex-col sm:flex-row flex-wrap gap-4 mb-8">
+              <Link href="/docs">
+                <Button size="lg" className="w-full sm:w-auto marketing-btn-primary text-lg px-8">
+                  <BookOpen className="mr-2 h-5 w-5" />
+                  Read the docs
+                </Button>
+              </Link>
+              <Link href="/try">
+                <Button size="lg" className="w-full sm:w-auto marketing-btn-secondary text-lg px-8">
+                  Try the API (no login)
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
-              <Link href={apiDocsUrl}>
-                <Button size="lg" variant="outline" className="border-2 border-slate-300 dark:border-slate-700 text-lg px-8">
-                  <Terminal className="mr-2 h-5 w-5" />
-                  View API Docs
+              <Link href="/login">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto border-2 border-marketing-border text-marketing-heading text-lg px-8 bg-marketing-elevated/80">
+                  Dashboard
+                  <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
             </div>
             
-            <div className="flex items-center space-x-8 text-sm text-slate-600 dark:text-slate-400">
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm text-marketing-muted">
               <div className="flex items-center space-x-2">
                 <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                 <span>Open Source</span>
@@ -270,10 +214,10 @@ if (!result.is_safe) {
       </section>
 
       {/* How It Works - Workflow Diagram */}
-      <section className="container mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-24">
+      <section id="platform" className="container mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-24 scroll-mt-24">
         <div className="text-center mb-8 sm:mb-12">
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white mb-4">
-            Where Rampart Sits in Your Workflow
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-marketing-heading mb-4">
+            Where Rampart sits in your workflow
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
             Protect both input prompts AND output responses—a complete security layer for your LLM pipeline
@@ -432,10 +376,10 @@ if (!result.is_safe) {
       </section>
 
       {/* Features Section */}
-      <section className="container mx-auto px-4 sm:px-6 py-12 sm:py-20">
+      <section id="features" className="container mx-auto px-4 sm:px-6 py-12 sm:py-20 scroll-mt-24">
         <div className="text-center mb-8 sm:mb-16">
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white mb-4">
-            Everything You Need to Secure AI
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-marketing-heading mb-4">
+            Everything you need to secure AI
           </h2>
           <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto">
             Production-ready security controls aligned with OWASP LLM Top 10 and NIST AI Risk Management Framework
@@ -768,25 +712,30 @@ else:
       </section>
 
       {/* CTA Section */}
-      <section className="bg-gradient-to-r from-blue-600 to-indigo-600 py-12 sm:py-20">
+      <section className="bg-marketing-cta-band py-12 sm:py-20">
         <div className="container mx-auto px-4 sm:px-6 text-center">
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-4">
-            Ready to Secure Your AI Applications?
+            Ready to lock down your LLM pipeline?
           </h2>
-          <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
-            Join teams using Rampart to protect their LLM applications with enterprise-grade security
+          <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+            Use the docs and playground first, then wire your production keys through the dashboard.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
-            <Link href="/login">
-              <Button size="lg" className="bg-white text-blue-600 hover:bg-slate-100 shadow-xl text-lg px-8">
-                Start Building
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Link href="/docs">
+              <Button size="lg" className="bg-white text-marketing-heading hover:bg-white/90 shadow-xl text-lg px-8 w-full sm:w-auto">
+                Open documentation
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer">
-              <Button size="lg" variant="outline" className="border-2 border-white text-white hover:bg-white/10 text-lg px-8">
+            <Link href="/login">
+              <Button size="lg" variant="outline" className="border-2 border-white text-white hover:bg-white/10 text-lg px-8 w-full sm:w-auto">
+                Go to dashboard
+              </Button>
+            </Link>
+            <a href={githubUrl} target="_blank" rel="noopener noreferrer">
+              <Button size="lg" variant="outline" className="border-2 border-white text-white hover:bg-white/10 text-lg px-8 w-full sm:w-auto">
                 <Github className="mr-2 h-5 w-5" />
-                View on GitHub
+                GitHub
               </Button>
             </a>
           </div>
@@ -794,56 +743,57 @@ else:
       </section>
 
       {/* Footer */}
-      <footer className="bg-slate-900 text-slate-300 py-12">
+      <footer className="bg-marketing-footer py-12">
         <div className="container mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 mb-8">
             <div>
               <div className="flex items-center space-x-2 mb-4">
-                <Shield className="h-6 w-6 text-blue-400" />
-                <span className="text-xl font-bold text-white">Rampart</span>
+                <Shield className="h-6 w-6 text-marketing-accent" />
+                <span className="text-xl font-bold text-marketing-footer-fg">Rampart</span>
               </div>
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-marketing-footer-muted">
                 Production-ready security gateway for LLM applications
               </p>
             </div>
             
             <div>
-              <h4 className="font-semibold text-white mb-4">Product</h4>
-              <ul className="space-y-2 text-sm">
-                <li><Link href="/features" className="hover:text-blue-400 transition-colors">Features</Link></li>
-                <li><Link href="/pricing" className="hover:text-blue-400 transition-colors">Pricing</Link></li>
-                <li><Link href="/security" className="hover:text-blue-400 transition-colors">Security</Link></li>
-                <li><Link href="/changelog" className="hover:text-blue-400 transition-colors">Changelog</Link></li>
+              <h4 className="font-semibold text-marketing-footer-fg mb-4">Product</h4>
+              <ul className="space-y-2 text-sm text-marketing-footer-muted">
+                <li><Link href="/#platform" className="hover:text-marketing-accent transition-colors">Platform</Link></li>
+                <li><Link href="/#features" className="hover:text-marketing-accent transition-colors">Capabilities</Link></li>
+                <li><Link href="/try" className="hover:text-marketing-accent transition-colors">Try it</Link></li>
+                <li><Link href="/login" className="hover:text-marketing-accent transition-colors">Dashboard</Link></li>
               </ul>
             </div>
             
             <div>
-              <h4 className="font-semibold text-white mb-4">Resources</h4>
-              <ul className="space-y-2 text-sm">
-                <li><Link href="/docs" className="hover:text-blue-400 transition-colors">Documentation</Link></li>
-                <li><Link href={apiDocsUrl} className="hover:text-blue-400 transition-colors">API Reference</Link></li>
-                <li><a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">GitHub</a></li>
-                <li><Link href="/examples" className="hover:text-blue-400 transition-colors">Examples</Link></li>
+              <h4 className="font-semibold text-marketing-footer-fg mb-4">Developers</h4>
+              <ul className="space-y-2 text-sm text-marketing-footer-muted">
+                <li><Link href="/docs" className="hover:text-marketing-accent transition-colors">Documentation</Link></li>
+                <li><a href={apiDocsUrl} target="_blank" rel="noopener noreferrer" className="hover:text-marketing-accent transition-colors">Interactive API</a></li>
+                <li><a href={githubUrl} target="_blank" rel="noopener noreferrer" className="hover:text-marketing-accent transition-colors">GitHub</a></li>
+                <li><Link href="/docs/integration" className="hover:text-marketing-accent transition-colors">Integration guide</Link></li>
+                <li><Link href="/docs/api-reference" className="hover:text-marketing-accent transition-colors">API reference</Link></li>
               </ul>
             </div>
             
             <div>
-              <h4 className="font-semibold text-white mb-4">Company</h4>
-              <ul className="space-y-2 text-sm">
-                <li><Link href="/about" className="hover:text-blue-400 transition-colors">About</Link></li>
-                <li><Link href="/blog" className="hover:text-blue-400 transition-colors">Blog</Link></li>
-                <li><Link href="/contact" className="hover:text-blue-400 transition-colors">Contact</Link></li>
-                <li><Link href="/privacy" className="hover:text-blue-400 transition-colors">Privacy</Link></li>
+              <h4 className="font-semibold text-marketing-footer-fg mb-4">Company</h4>
+              <ul className="space-y-2 text-sm text-marketing-footer-muted">
+                <li><Link href="/about" className="hover:text-marketing-accent transition-colors">About</Link></li>
+                <li><Link href="/blog" className="hover:text-marketing-accent transition-colors">Blog</Link></li>
+                <li><Link href="/contact" className="hover:text-marketing-accent transition-colors">Contact</Link></li>
+                <li><Link href="/privacy" className="hover:text-marketing-accent transition-colors">Privacy</Link></li>
               </ul>
             </div>
           </div>
           
-          <div className="border-t border-slate-800 pt-8 flex flex-col md:flex-row justify-between items-center text-sm text-slate-400">
+          <div className="border-t border-marketing-border pt-8 flex flex-col md:flex-row justify-between items-center text-sm text-marketing-footer-muted">
             <p>&copy; 2025 Project Rampart. Open source under Apache License 2.0.</p>
             <div className="flex space-x-6 mt-4 md:mt-0">
-              <a href="https://twitter.com/rampart" className="hover:text-blue-400 transition-colors">Twitter</a>
-              <a href={process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/arunrao/rampart-ai"} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 transition-colors">GitHub</a>
-              <a href="https://discord.gg/rampart" className="hover:text-blue-400 transition-colors">Discord</a>
+              <a href="https://twitter.com/rampart" className="hover:text-marketing-accent transition-colors">Twitter</a>
+              <a href={githubUrl} target="_blank" rel="noopener noreferrer" className="hover:text-marketing-accent transition-colors">GitHub</a>
+              <a href="https://discord.gg/rampart" className="hover:text-marketing-accent transition-colors">Discord</a>
             </div>
           </div>
         </div>

@@ -7,16 +7,19 @@ from dataclasses import dataclass
 from functools import lru_cache
 import re
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
-# Try to import GLiNER
+# Try to import GLiNER (name must exist in both branches for type checkers)
 try:
-    from gliner import GLiNER
-    GLINER_AVAILABLE = True
+    from gliner import GLiNER as _GLiNERClass
 except ImportError:
-    GLINER_AVAILABLE = False
+    _GLiNERClass = None  # type: ignore[assignment, misc]
     logger.warning("GLiNER not available. Install with: pip install gliner")
+
+GLiNER = _GLiNERClass
+GLINER_AVAILABLE = _GLiNERClass is not None
 
 
 @dataclass
@@ -42,11 +45,12 @@ class GLiNERPIIDetector:
     - Multiple model options (fast/balanced/accurate)
     """
     
-    # Model options
+    # Model options — benchmarked on synthetic-multi-pii-ner-v1
+    # All knowledgator models are PII-specialized and ship ONNX variants.
     MODELS = {
-        "edge": "knowledgator/gliner-pii-edge-v1.0",      # Fastest, ~5ms
-        "balanced": "gravitee-io/gliner-pii-detection",    # Balanced, ~10ms (DEFAULT)
-        "accurate": "gretelai/gretel-gliner-bi-large-v1.0" # Most accurate, ~15ms
+        "edge":     "knowledgator/gliner-pii-edge-v1.0",   # F1 75.5% — UINT8 ONNX 197MB (fastest, default)
+        "balanced": "knowledgator/gliner-pii-small-v1.0",  # F1 76.8% — FP16  ONNX ~330MB
+        "accurate": "knowledgator/gliner-pii-base-v1.0",   # F1 81.0% — FP16  ONNX ~330MB
     }
     
     # Default PII entity labels for GLiNER
@@ -77,7 +81,7 @@ class GLiNERPIIDetector:
     
     def __init__(
         self,
-        model_type: str = "balanced",
+        model_type: str = "edge",
         confidence_threshold: float = 0.7,
         use_onnx: bool = True,
         custom_labels: Optional[List[str]] = None
@@ -114,10 +118,10 @@ class GLiNERPIIDetector:
     
     def _load_model(self):
         """Load GLiNER model with error handling"""
-        if not GLINER_AVAILABLE:
+        if not GLINER_AVAILABLE or GLiNER is None:
             logger.error("GLiNER library not installed")
             return None
-        
+
         model_name = self.MODELS.get(self.model_type, self.MODELS["balanced"])
         
         try:
@@ -388,6 +392,7 @@ class GLiNERPIIDetector:
 
 # Global singleton instance (lazy loaded)
 _detector_instance: Optional[GLiNERPIIDetector] = None
+_gliner_detector_lock = threading.Lock()
 
 
 def get_gliner_detector(
@@ -409,11 +414,13 @@ def get_gliner_detector(
     global _detector_instance
     
     if _detector_instance is None:
-        _detector_instance = GLiNERPIIDetector(
-            model_type=model_type,
-            confidence_threshold=confidence_threshold,
-            use_onnx=use_onnx
-        )
+        with _gliner_detector_lock:
+            if _detector_instance is None:
+                _detector_instance = GLiNERPIIDetector(
+                    model_type=model_type,
+                    confidence_threshold=confidence_threshold,
+                    use_onnx=use_onnx
+                )
     
     return _detector_instance
 

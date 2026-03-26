@@ -8,7 +8,7 @@ import AppLayout from "@/components/AppLayout";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Project Rampart - AI Security & Observability",
+  title: "Project Rampart v0.2.5 — AI Security & Observability",
   description: "Comprehensive security and observability platform for AI applications",
 };
 

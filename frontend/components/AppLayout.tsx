@@ -25,8 +25,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Check if we're on auth pages (login, callback)
   const isAuthPage = pathname === "/login" || pathname?.startsWith("/auth/");
   
-  // Check if we're on public pages (landing, docs) without auth
-  const isPublicPage = !loading && !user && (pathname === "/" || pathname === "/landing" || pathname === "/docs");
+  // Full width: guest marketing pages, or /try (playground layout handles its own header)
+  const isPublicPage =
+    pathname === "/try" ||
+    (!loading && !user && (pathname === "/" || pathname === "/landing" || pathname?.startsWith("/docs")));
 
   return (
     <SidebarContext.Provider value={{ isSidebarOpen, setIsSidebarOpen }}>

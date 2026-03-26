@@ -4,9 +4,10 @@ Security middleware for FastAPI application
 from fastapi import Request, Response, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+import asyncio
 import time
 from collections import defaultdict
-from typing import Dict, Tuple, Set
+from typing import Dict, Optional, Tuple, Set
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class APIKeyEnforcementMiddleware(BaseHTTPMiddleware):
         "/api/v1/auth/google/login",
         "/api/v1/auth/callback/google",
         "/api/v1/providers/supported",
+        "/api/v1/filter/demo",  # Unauthenticated try-it (gated by ENABLE_PUBLIC_FILTER_DEMO)
     }
     
     # Path prefixes that don't require authentication
@@ -321,3 +323,129 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
             )
         
         return await call_next(request)
+
+
+# Paths that should not be audit-logged (health probes, metrics, static)
+_AUDIT_SKIP_PATHS = frozenset({
+    "/", "/health", "/metrics", "/docs", "/redoc", "/openapi.json",
+    "/api/v1/health", "/api/v1/health/ready", "/api/v1/health/live",
+    "/api/v1/docs", "/api/v1/redoc", "/api/v1/openapi.json",
+})
+
+
+class AuditLogMiddleware(BaseHTTPMiddleware):
+    """
+    SOC2 Type II audit trail middleware.
+
+    Writes one row to the audit_logs table for every authenticated API request.
+    Silently degrades when the DB is unavailable — it never blocks the request.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        # Skip noisy infrastructure paths
+        if request.url.path in _AUDIT_SKIP_PATHS:
+            return await call_next(request)
+
+        start_time = time.time()
+        response = await call_next(request)
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        # Respect the AUDIT_LOG_ENABLED flag — skip the DB write when opted out.
+        try:
+            from api.config import get_settings as _get_settings
+            if not _get_settings().audit_log_enabled:
+                return response
+        except Exception:
+            pass
+
+        # Extract context on the event loop before handing off to a thread.
+        # This avoids any thread-safety concerns with request.state.
+        user_id, api_key_preview = self._get_auth_context(request)
+        endpoint = request.url.path
+        method = request.method
+        ip = self._get_client_ip(request)
+        status_code = response.status_code
+
+        # Fire-and-forget: write to DB in a thread-pool worker so the client
+        # receives the response immediately without waiting for the INSERT.
+        asyncio.create_task(
+            asyncio.to_thread(
+                self._write_log,
+                endpoint, method, ip, status_code, elapsed_ms,
+                user_id, api_key_preview,
+            )
+        )
+
+        return response
+
+    @staticmethod
+    def _get_client_ip(request: Request) -> str:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip
+        if request.client:
+            return request.client.host
+        return "unknown"
+
+    @staticmethod
+    def _get_auth_context(request: Request) -> Tuple[Optional[str], Optional[str]]:
+        """Extract user_id and api_key_preview from request state (set by auth deps)."""
+        user_id: Optional[str] = None
+        api_key_preview: Optional[str] = None
+
+        # The auth dependencies in security.py / rampart_keys.py store these on request.state
+        state = getattr(request, "state", None)
+        if state:
+            user_id = str(getattr(state, "user_id", None) or "") or None
+            api_key_preview = getattr(state, "api_key_preview", None)
+
+        # Fallback: parse the Authorization header for the key preview
+        if not api_key_preview:
+            auth = request.headers.get("Authorization", "")
+            parts = auth.split()
+            if len(parts) == 2 and parts[1].startswith("rmp_"):
+                token = parts[1]
+                # Show first 12 chars + last 4 as preview
+                api_key_preview = f"{token[:12]}****{token[-4:]}" if len(token) >= 16 else "rmp_****"
+
+        return user_id, api_key_preview
+
+    @staticmethod
+    def _write_log(
+        endpoint: str,
+        method: str,
+        ip: str,
+        status_code: int,
+        elapsed_ms: float,
+        user_id: Optional[str],
+        api_key_preview: Optional[str],
+    ) -> None:
+        """Synchronous DB write — runs in a thread-pool worker, never on the event loop."""
+        try:
+            from api.db import insert_audit_log
+        except Exception:
+            return
+
+        if status_code == 401:
+            event_type = "auth_failure"
+        elif status_code == 429:
+            event_type = "rate_limit_hit"
+        else:
+            event_type = "api_request"
+
+        try:
+            insert_audit_log(
+                endpoint=endpoint,
+                http_method=method,
+                ip_address=ip,
+                event_type=event_type,
+                user_id=user_id,
+                api_key_preview=api_key_preview,
+                status_code=status_code,
+                processing_time_ms=round(elapsed_ms, 2),
+            )
+        except Exception:
+            pass  # Never let an audit failure surface

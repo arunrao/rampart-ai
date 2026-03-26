@@ -144,6 +144,35 @@ export const contentFilterApi = {
     const response = await api.post('/filter', data);
     return response.data;
   },
+  /** Public playground — no auth. Uses `fetch` so missing auth never triggers axios 401 redirect. */
+  filterContentDemo: async (data: {
+    content: string;
+    filters: string[];
+    redact?: boolean;
+    toxicity_threshold?: number;
+  }) => {
+    const res = await fetch(`${API_URL}/filter/demo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const text = await res.text();
+    let payload: unknown = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = { detail: text };
+    }
+    if (!res.ok) {
+      const err = payload as { detail?: string };
+      throw new Error(
+        typeof err?.detail === 'string'
+          ? err.detail
+          : `Demo request failed (${res.status})`
+      );
+    }
+    return payload;
+  },
   detectPII: async (content: string) => {
     const response = await api.post('/pii/detect', null, {
       params: { content },

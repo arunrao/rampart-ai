@@ -28,6 +28,10 @@ class RampartAPIKeyCreate(BaseModel):
     rate_limit_per_minute: Optional[int] = Field(default=60, ge=1, le=10000)
     rate_limit_per_hour: Optional[int] = Field(default=1000, ge=1, le=100000)
     expires_in_days: Optional[int] = Field(default=None, ge=1, le=365, description="Optional expiration in days")
+    template_pack: Optional[str] = Field(
+        default=None,
+        description="Use-case template pack to attach (e.g. 'customer_support', 'healthcare')"
+    )
 
 
 class RampartAPIKeyResponse(BaseModel):
@@ -42,6 +46,7 @@ class RampartAPIKeyResponse(BaseModel):
     last_used_at: Optional[datetime]
     created_at: datetime
     expires_at: Optional[datetime]
+    template_pack: Optional[str] = None
     usage_stats: Optional[dict] = None
 
 
@@ -58,6 +63,14 @@ class RampartAPIKeyUsage(BaseModel):
     tokens_used: int
     cost_usd: float
     top_endpoints: List[dict]
+
+
+class TemplatePackAttach(BaseModel):
+    """Request to attach or detach a template pack from an API key"""
+    template_pack: Optional[str] = Field(
+        default=None,
+        description="Template pack name to attach, or null to detach"
+    )
 
 
 def generate_rampart_api_key() -> tuple[str, str, str]:
@@ -117,7 +130,7 @@ async def create_rampart_api_key(
         key_count = conn.execute(
             text("SELECT COUNT(*) FROM rampart_api_keys WHERE user_id = :user_id AND is_active = true"),
             {"user_id": user_id}
-        ).scalar()
+        ).scalar() or 0
         
         if key_count >= 10:
             raise HTTPException(
@@ -142,11 +155,11 @@ async def create_rampart_api_key(
                 INSERT INTO rampart_api_keys (
                     user_id, key_name, key_prefix, key_hash, key_preview,
                     permissions, rate_limit_per_minute, rate_limit_per_hour,
-                    expires_at, created_at, updated_at
+                    expires_at, created_at, updated_at, template_pack
                 ) VALUES (
                     :user_id, :key_name, :key_prefix, :key_hash, :key_preview,
                     :permissions, :rate_limit_per_minute, :rate_limit_per_hour,
-                    :expires_at, :created_at, :updated_at
+                    :expires_at, :created_at, :updated_at, :template_pack
                 ) RETURNING id
             """),
             {
@@ -160,12 +173,15 @@ async def create_rampart_api_key(
                 "rate_limit_per_hour": request.rate_limit_per_hour,
                 "expires_at": expires_at,
                 "created_at": now,
-                "updated_at": now
+                "updated_at": now,
+                "template_pack": request.template_pack,
             }
         )
         conn.commit()
         
         key_id = result.scalar()
+        if key_id is None:
+            raise HTTPException(status_code=500, detail="Failed to create API key")
     
     # Return the key info (full key only shown once!)
     key_info = RampartAPIKeyResponse(
@@ -173,12 +189,13 @@ async def create_rampart_api_key(
         name=request.name,
         key_preview=key_preview,
         permissions=request.permissions,
-        rate_limit_per_minute=request.rate_limit_per_minute,
-        rate_limit_per_hour=request.rate_limit_per_hour,
+        rate_limit_per_minute=request.rate_limit_per_minute or 60,
+        rate_limit_per_hour=request.rate_limit_per_hour or 1000,
         is_active=True,
         last_used_at=None,
         created_at=now,
-        expires_at=expires_at
+        expires_at=expires_at,
+        template_pack=request.template_pack,
     )
     
     return RampartAPIKeyCreateResponse(
@@ -198,7 +215,7 @@ async def list_rampart_api_keys(current_user: TokenData = Depends(get_current_us
                 SELECT 
                     id, key_name, key_preview, permissions,
                     rate_limit_per_minute, rate_limit_per_hour,
-                    is_active, last_used_at, created_at, expires_at
+                    is_active, last_used_at, created_at, expires_at, template_pack
                 FROM rampart_api_keys 
                 WHERE user_id = :user_id 
                 ORDER BY created_at DESC
@@ -232,6 +249,7 @@ async def list_rampart_api_keys(current_user: TokenData = Depends(get_current_us
                 last_used_at=row[7],
                 created_at=row[8],
                 expires_at=row[9],
+                template_pack=row[10],
                 usage_stats={
                     "total_requests": usage_stats[0] if usage_stats else 0,
                     "tokens_used": usage_stats[1] if usage_stats else 0,
@@ -355,6 +373,82 @@ async def get_rampart_api_key_usage(
         )
 
 
+@router.put("/rampart-keys/{key_id}/template-pack", response_model=RampartAPIKeyResponse)
+async def set_template_pack(
+    key_id: UUID,
+    payload: TemplatePackAttach,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """
+    Attach or detach a use-case template pack from a Rampart API key.
+
+    When a pack is attached, its filter defaults (filters list, thresholds, redact flag,
+    custom PII patterns) are automatically applied on every ``POST /filter`` call made
+    with that key. Explicit per-request fields still override pack defaults.
+
+    Pass ``template_pack: null`` to detach the current pack.
+    """
+    user_id = current_user.user_id
+
+    # Validate pack name if provided
+    if payload.template_pack is not None:
+        from api.routes.policies import TemplatePack
+        valid_packs = {p.value for p in TemplatePack}
+        if payload.template_pack not in valid_packs:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown template pack '{payload.template_pack}'. "
+                       f"Valid options: {sorted(valid_packs)}",
+            )
+
+    with get_conn() as conn:
+        # Verify key belongs to user
+        result = conn.execute(
+            text("SELECT id FROM rampart_api_keys WHERE id = :key_id AND user_id = :user_id"),
+            {"key_id": key_id, "user_id": user_id},
+        ).fetchone()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="API key not found")
+
+        conn.execute(
+            text("""
+                UPDATE rampart_api_keys
+                SET template_pack = :template_pack, updated_at = :now
+                WHERE id = :key_id
+            """),
+            {"template_pack": payload.template_pack, "now": datetime.utcnow(), "key_id": key_id},
+        )
+        conn.commit()
+
+        row = conn.execute(
+            text("""
+                SELECT id, key_name, key_preview, permissions,
+                       rate_limit_per_minute, rate_limit_per_hour,
+                       is_active, last_used_at, created_at, expires_at, template_pack
+                FROM rampart_api_keys WHERE id = :key_id
+            """),
+            {"key_id": key_id},
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    return RampartAPIKeyResponse(
+        id=row[0],
+        name=row[1],
+        key_preview=row[2],
+        permissions=row[3],
+        rate_limit_per_minute=row[4],
+        rate_limit_per_hour=row[5],
+        is_active=row[6],
+        last_used_at=row[7],
+        created_at=row[8],
+        expires_at=row[9],
+        template_pack=row[10],
+    )
+
+
 # Authentication dependency for API key access
 async def get_current_user_from_api_key(api_key: str) -> tuple[TokenData, UUID]:
     """
@@ -414,6 +508,19 @@ async def get_current_user_from_api_key(api_key: str) -> tuple[TokenData, UUID]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key"
         )
+
+
+def get_api_key_template_pack(api_key_id: UUID) -> Optional[str]:
+    """Return the template_pack name stored on a Rampart API key, or None."""
+    try:
+        with get_conn() as conn:
+            result = conn.execute(
+                text("SELECT template_pack FROM rampart_api_keys WHERE id = :key_id"),
+                {"key_id": str(api_key_id)},
+            ).fetchone()
+            return result[0] if result else None
+    except Exception:
+        return None
 
 
 def track_api_key_usage(api_key_id: UUID, endpoint: str, tokens_used: int = 0, cost_usd: float = 0.0):

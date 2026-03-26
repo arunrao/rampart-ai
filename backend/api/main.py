@@ -10,13 +10,14 @@ import logging
 from typing import Any, Callable, Optional
 
 from api.config import get_settings
-from api.routes import health, auth, providers, traces, security, policies, content_filter, test_scenarios, api_keys, rampart_keys
+from api.routes import health, auth, providers, traces, security, policies, content_filter, test_scenarios, api_keys, rampart_keys, admin
 from api.db import init_defaults_table, init_all_tables
 from api.middleware import (
     SecurityHeadersMiddleware,
     RateLimitMiddleware,
     RequestSizeLimitMiddleware,
-    APIKeyEnforcementMiddleware
+    APIKeyEnforcementMiddleware,
+    AuditLogMiddleware,
 )
 
 # OpenTelemetry setup (safe if not available)
@@ -115,6 +116,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"GLiNER warmup failed: {e}")
     
+    try:
+        # Warmup 3: Toxicity ML detector
+        from models.toxicity_detector import warmup as toxicity_warmup
+        toxicity_warmup()
+    except Exception as e:
+        logger.warning(f"Toxicity model warmup failed: {e}")
+    
     logger.info("✓ All ML models ready")
     
     yield
@@ -148,10 +156,13 @@ app.add_middleware(
 # 3. API Key/JWT enforcement (before security headers so auth errors are properly formatted)
 app.add_middleware(APIKeyEnforcementMiddleware)
 
-# 4. Security headers (pass CORS origins for CSP)
+# 4. Audit logging (SOC2 Type II — runs after auth so user context is available)
+app.add_middleware(AuditLogMiddleware)
+
+# 5. Security headers (pass CORS origins for CSP)
 app.add_middleware(SecurityHeadersMiddleware, cors_origins=settings.cors_origins)
 
-# 4. CORS middleware
+# 6. CORS middleware
 # Parse comma-separated origins from config
 cors_origins = [origin.strip() for origin in settings.cors_origins.split(",")]
 
@@ -218,6 +229,7 @@ app.include_router(content_filter.router, prefix=settings.api_prefix, tags=["con
 app.include_router(test_scenarios.router, prefix=f"{settings.api_prefix}/test", tags=["testing"])
 app.include_router(api_keys.router, prefix=f"{settings.api_prefix}/api-keys", tags=["api-keys"])
 app.include_router(rampart_keys.router, prefix=settings.api_prefix, tags=["rampart-keys"])
+app.include_router(admin.router, prefix=settings.api_prefix, tags=["admin"])
 
 
 # Prometheus metrics endpoint

@@ -155,12 +155,9 @@ POST /filter
     }
   ],
   "toxicity_scores": {
-    "toxicity": 0.02,
-    "severe_toxicity": 0.01,
-    "obscene": 0.01,
-    "threat": 0.01,
-    "insult": 0.01,
-    "identity_attack": 0.01
+    "toxicity": 0.04,
+    "is_toxic": false,
+    "label": "not_toxic"
   },
   "prompt_injection": {
     "is_injection": true,
@@ -177,7 +174,7 @@ POST /filter
 
 **Available Filters:**
 - `pii` - PII detection (GLiNER ML-based, 93% accuracy)
-- `toxicity` - Toxicity analysis (heuristic or Detoxify model)
+- `toxicity` - Toxicity analysis (unitary/toxic-bert, multi-label Jigsaw fine-tune)
 - `prompt_injection` - Prompt injection detection (Hybrid DeBERTa + Regex, 92% accuracy)
 
 **PII Types Detected:**

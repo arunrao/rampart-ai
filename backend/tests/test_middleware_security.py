@@ -44,6 +44,20 @@ def test_public_providers_supported_unauthenticated(client: TestClient):
 
 
 @pytest.mark.security
+def test_public_filter_demo_unauthenticated_not_401(client: TestClient):
+    """Playground must bypass API key middleware (may 200, 400, 404, 422, 5xx depending on config/ML)."""
+    r = client.post(
+        "/api/v1/filter/demo",
+        json={
+            "content": "Hello world",
+            "filters": ["toxicity"],
+            "redact": False,
+        },
+    )
+    assert r.status_code != 401
+
+
+@pytest.mark.security
 def test_oauth_login_path_unauthenticated(client: TestClient):
     # Do not follow redirect to accounts.google.com (would hit API middleware on test client).
     r = client.get("/api/v1/auth/google/login", follow_redirects=False)

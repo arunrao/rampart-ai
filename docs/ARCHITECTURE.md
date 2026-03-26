@@ -200,7 +200,7 @@ Input Text → Engine Selector → [Hybrid/GLiNER/Regex] → Deduplicate → PII
 **Performance**: 93% accuracy, ~6-10ms latency (hybrid mode)
 
 #### 3. Toxicity Analysis
-Heuristic-based scoring for harmful language. For production: integrate [Detoxify](https://github.com/unitaryai/detoxify) or [Perspective API](https://perspectiveapi.com/)
+ML-based scoring using `unitary/toxic-bert` (BERT-base, ~420 MB, multi-label Jigsaw fine-tune, 6 categories). Replaces prior heuristic word-list approach.
 
 **Unified API Response:**
 ```python
@@ -658,7 +658,7 @@ METRIC_FILTER_LATENCY_MS = Histogram(
 METRIC_FILTER_REQUESTS = Counter(
     "content_filter_requests_total",
     "Total content filter requests",
-    ["redact", "use_model_toxicity"]
+    ["redact"]
 )
 
 METRIC_PII_COUNT = Histogram(

@@ -5,12 +5,14 @@ from .security import (
     SecurityHeadersMiddleware,
     RateLimitMiddleware,
     RequestSizeLimitMiddleware,
-    APIKeyEnforcementMiddleware
+    APIKeyEnforcementMiddleware,
+    AuditLogMiddleware,
 )
 
 __all__ = [
     "SecurityHeadersMiddleware",
     "RateLimitMiddleware",
     "RequestSizeLimitMiddleware",
-    "APIKeyEnforcementMiddleware"
+    "APIKeyEnforcementMiddleware",
+    "AuditLogMiddleware",
 ]

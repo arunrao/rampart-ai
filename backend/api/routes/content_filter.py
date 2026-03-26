@@ -12,10 +12,12 @@ from enum import Enum
 import re
 import os
 import logging
+import asyncio
 
+from api.config import get_settings
 from api.routes.auth import get_current_user, TokenData
 from api.routes.security import get_authenticated_user
-from api.routes.rampart_keys import track_api_key_usage
+from api.routes.rampart_keys import track_api_key_usage, get_api_key_template_pack
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -66,7 +68,7 @@ try:
     METRIC_FILTER_REQUESTS = Counter(
         "content_filter_requests_total",
         "Total content filter requests",
-        ["redact", "use_model_toxicity"],
+        ["redact"],
     )
     METRIC_FILTER_UNSAFE = Counter(
         "content_filter_unsafe_total",
@@ -123,13 +125,10 @@ class PIIEntity(BaseModel):
 
 
 class ToxicityScore(BaseModel):
-    """Toxicity analysis scores"""
-    toxicity: float
-    severe_toxicity: float
-    obscene: float
-    threat: float
-    insult: float
-    identity_attack: float
+    """Toxicity analysis scores from the ML model."""
+    toxicity: float   # P(toxic) from citizenlab/distilbert, range [0.0, 1.0]
+    is_toxic: bool    # True when toxicity > threshold
+    label: str        # "toxic" | "not_toxic"
 
 
 class PromptInjectionResult(BaseModel):
@@ -152,23 +151,11 @@ class ContentFilterRequest(BaseModel):
         default=None,
         description="Optional dict of name->regex to augment built-in PII detection"
     )
-    custom_toxic_words: Optional[List[str]] = Field(
-        default=None,
-        description="Optional list of additional toxic words"
-    )
-    custom_severe_words: Optional[List[str]] = Field(
-        default=None,
-        description="Optional list of additional severe toxic words"
-    )
     toxicity_threshold: float = Field(
         default=0.7,
         ge=0.0,
         le=1.0,
-        description="Threshold above which content is considered unsafe based on toxicity"
-    )
-    use_model_toxicity: bool = Field(
-        default=False,
-        description="If true, use Detoxify model for toxicity instead of heuristics"
+        description="Threshold above which content is considered toxic (applied to ML model score)"
     )
     use_presidio_pii: bool = Field(
         default=False,
@@ -416,71 +403,32 @@ def _deduplicate_pii_entities(entities: List[PIIEntity]) -> List[PIIEntity]:
     return sorted(result, key=lambda e: e.start)
 
 
-def analyze_toxicity(
-    content: str,
-    custom_toxic_words: Optional[List[str]] = None,
-    custom_severe_words: Optional[List[str]] = None,
-) -> ToxicityScore:
+# Import ML toxicity detector
+try:
+    from models.toxicity_detector import detect_toxicity as _detect_toxicity_ml
+    TOXICITY_AVAILABLE = True
+except ImportError:
+    _detect_toxicity_ml = None  # type: ignore
+    TOXICITY_AVAILABLE = False
+
+
+def analyze_toxicity(content: str, threshold: float = 0.7) -> ToxicityScore:
     """
-    Analyze content for toxicity
-    In production, use a model like Detoxify or Perspective API
+    Run ML-based toxicity analysis.
+
+    Uses unitary/toxic-bert (BERT-base, ~420 MB, multi-label Jigsaw fine-tune).
+    Falls back to score=0.0 / label="not_toxic" when the model is not available.
     """
-    # Simple heuristic-based scoring (replace with ML model)
-    toxic_words = ["hate", "kill", "stupid", "idiot", "dumb"]
-    severe_words = ["die", "murder", "attack"]
-
-    if custom_toxic_words:
-        toxic_words = list({w.lower() for w in (toxic_words + custom_toxic_words)})
-    if custom_severe_words:
-        severe_words = list({w.lower() for w in (severe_words + custom_severe_words)})
-    
-    content_lower = content.lower()
-    
-    toxic_count = sum(1 for word in toxic_words if word in content_lower)
-    severe_count = sum(1 for word in severe_words if word in content_lower)
-    
-    toxicity = min(toxic_count * 0.2, 1.0)
-    severe_toxicity = min(severe_count * 0.3, 1.0)
-    
-    return ToxicityScore(
-        toxicity=toxicity,
-        severe_toxicity=severe_toxicity,
-        obscene=toxicity * 0.7,
-        threat=severe_toxicity * 0.8,
-        insult=toxicity * 0.6,
-        identity_attack=toxicity * 0.4
-    )
-
-
-# Optional: Detoxify model-backed toxicity
-@lru_cache(maxsize=1)
-def _get_detoxify_model():
-    try:
-        from detoxify import Detoxify  # type: ignore
-        # Use multilingual small model to keep load time lower
-        return Detoxify('original')
-    except Exception:
-        return None
-
-
-def analyze_toxicity_model(content: str) -> Optional[ToxicityScore]:
-    model = _get_detoxify_model()
-    if model is None:
-        return None
-    try:
-        scores = model.predict(content)
-        # Detoxify returns keys like: toxicity, severe_toxicity, obscene, threat, insult, identity_attack
-        return ToxicityScore(
-            toxicity=float(scores.get('toxicity', 0.0)),
-            severe_toxicity=float(scores.get('severe_toxicity', 0.0)),
-            obscene=float(scores.get('obscene', 0.0)),
-            threat=float(scores.get('threat', 0.0)),
-            insult=float(scores.get('insult', 0.0)),
-            identity_attack=float(scores.get('identity_attack', 0.0)),
-        )
-    except Exception:
-        # Fallback handled by caller
-        return None
+    if TOXICITY_AVAILABLE and _detect_toxicity_ml is not None:
+        result = _detect_toxicity_ml(content)
+        if result is not None:
+            return ToxicityScore(
+                toxicity=result["score"],
+                is_toxic=result["score"] > threshold,
+                label=result["label"],
+            )
+    # Graceful degradation: model unavailable
+    return ToxicityScore(toxicity=0.0, is_toxic=False, label="not_toxic")
 
 
 def redact_pii(content: str, entities: List[PIIEntity]) -> str:
@@ -566,6 +514,246 @@ def detect_pii_presidio(content: str) -> Tuple[List[PIIEntity], Optional[str]]:
         return [], None
 
 
+async def _execute_filter_core(
+    request: ContentFilterRequest,
+    span: Any,
+    *,
+    redact: bool,
+    custom_pii_patterns: Optional[Dict[str, str]],
+    toxicity_threshold: float,
+    use_presidio_pii: bool,
+    persist_result: bool = True,
+    record_prometheus: bool = True,
+) -> ContentFilterResponse:
+    """Shared ML pipeline for /filter and public /filter/demo."""
+    import time
+
+    start_time = time.time()
+
+    if _OTEL and span is not None:
+        try:
+            span.set_attribute("filters", ",".join(request.filters))
+            span.set_attribute("redact", bool(redact))
+            span.set_attribute("toxicity.threshold", float(toxicity_threshold))
+            span.set_attribute("pii.custom_patterns", int(bool(custom_pii_patterns)))
+        except Exception:
+            pass
+
+    pii_entities: List[PIIEntity] = []
+    toxicity_scores = None
+    prompt_injection_result = None
+    filtered_content = request.content
+
+    settings = get_settings()
+    parallel_ml = settings.content_filter_parallel_ml
+
+    async def run_traced_pii() -> Tuple[str, List[PIIEntity], Optional[str]]:
+        subctx = (
+            _tracer.start_as_current_span("pii_detection") if _OTEL else nullcontext()
+        )
+        with subctx as subspan:  # type: ignore
+
+            def _pii_work() -> Tuple[str, List[PIIEntity], Optional[str]]:
+                if use_presidio_pii:
+                    ent, red = detect_pii_presidio(request.content)
+                    return ("presidio", ent, red)
+                ent = detect_pii(
+                    request.content, custom_patterns=custom_pii_patterns
+                )
+                return ("standard", ent, None)
+
+            kind, entities, presidio_redacted = await asyncio.to_thread(_pii_work)
+            if _OTEL and subspan is not None:
+                try:
+                    subspan.set_attribute("pii.count", len(entities))
+                except Exception:
+                    pass
+            return kind, entities, presidio_redacted
+
+    async def run_traced_toxicity():
+        toxctx = (
+            _tracer.start_as_current_span("toxicity_analysis") if _OTEL else nullcontext()
+        )
+        with toxctx as toxspan:  # type: ignore
+
+            def _tox_work():
+                return analyze_toxicity(request.content, threshold=toxicity_threshold)
+
+            scores = await asyncio.to_thread(_tox_work)
+            if _OTEL and toxspan is not None and scores is not None:
+                try:
+                    toxspan.set_attribute("toxicity.score", float(scores.toxicity))
+                    toxspan.set_attribute("toxicity.is_toxic", bool(scores.is_toxic))
+                except Exception:
+                    pass
+            return scores
+
+    async def run_traced_pi():
+        pictx = (
+            _tracer.start_as_current_span("prompt_injection_detection") if _OTEL else nullcontext()
+        )
+        with pictx as pispan:  # type: ignore
+
+            def _pi_work():
+                if not PROMPT_INJECTION_AVAILABLE or get_detector is None:
+                    return ("unavailable", None)
+                try:
+                    detector = get_detector()
+                    if detector is None:
+                        logger.error("Detector is None after get_detector() call")
+                        raise ValueError("Detector not initialized")
+                    logger.debug(
+                        f"Calling detector.detect() with content length: {len(request.content)}"
+                    )
+                    dr = detector.detect(
+                        request.content,
+                        fast_mode=settings.prompt_injection_fast_mode,
+                    )
+                    logger.debug(f"Detection result: {dr}")
+                    return ("ok", dr)
+                except Exception as e:
+                    logger.error(f"Prompt injection detection failed: {e}", exc_info=True)
+                    return ("error", e)
+
+            status, payload = await asyncio.to_thread(_pi_work)
+            if status == "ok" and payload is not None and _OTEL and pispan is not None:
+                try:
+                    pispan.set_attribute("injection.detected", bool(payload["is_injection"]))
+                    pispan.set_attribute("injection.confidence", float(payload["confidence"]))
+                except Exception:
+                    pass
+            return status, payload
+
+    coroutines = []
+    labels: List[str] = []
+
+    if FilterType.PII in request.filters:
+        labels.append("pii")
+        coroutines.append(run_traced_pii())
+    if FilterType.TOXICITY in request.filters:
+        labels.append("tox")
+        coroutines.append(run_traced_toxicity())
+    if FilterType.PROMPT_INJECTION in request.filters:
+        labels.append("pi")
+        coroutines.append(run_traced_pi())
+
+    results: List[Any] = []
+    if coroutines:
+        if parallel_ml and len(coroutines) > 1:
+            results = await asyncio.gather(*coroutines)
+        else:
+            for c in coroutines:
+                results.append(await c)
+
+    for label, result in zip(labels, results):
+        if label == "pii":
+            kind, pii_entities, presidio_redacted = result
+            if kind == "presidio" and redact and presidio_redacted is not None:
+                filtered_content = presidio_redacted
+            elif redact and pii_entities and kind != "presidio":
+                redctx = (
+                    _tracer.start_as_current_span("pii_redaction") if _OTEL else nullcontext()
+                )
+                with redctx:  # type: ignore
+                    filtered_content = redact_pii(request.content, pii_entities)
+        elif label == "tox":
+            toxicity_scores = result
+        elif label == "pi":
+            status, payload = result
+            if status == "ok" and isinstance(payload, dict):
+                detection_result = payload
+                prompt_injection_result = PromptInjectionResult(
+                    is_injection=detection_result["is_injection"],
+                    confidence=detection_result["confidence"],
+                    risk_score=detection_result.get(
+                        "risk_score", detection_result["confidence"]
+                    ),
+                    recommendation=detection_result["recommendation"],
+                    patterns_matched=[
+                        p["pattern"]
+                        for p in detection_result.get("regex_results", {}).get(
+                            "patterns_matched", []
+                        )
+                    ]
+                    if "regex_results" in detection_result
+                    else [],
+                )
+                logger.info(
+                    f"Prompt injection check: is_injection={prompt_injection_result.is_injection}, "
+                    f"confidence={prompt_injection_result.confidence}"
+                )
+            elif status == "unavailable":
+                logger.warning(
+                    f"Prompt injection detector not available. "
+                    f"AVAILABLE={PROMPT_INJECTION_AVAILABLE}, get_detector={get_detector}"
+                )
+                prompt_injection_result = PromptInjectionResult(
+                    is_injection=False,
+                    confidence=0.0,
+                    risk_score=0.0,
+                    recommendation="UNAVAILABLE - Detector not loaded",
+                    patterns_matched=[],
+                )
+            else:
+                prompt_injection_result = PromptInjectionResult(
+                    is_injection=False,
+                    confidence=0.0,
+                    risk_score=0.0,
+                    recommendation="ERROR - Detection unavailable",
+                    patterns_matched=[],
+                )
+
+    is_safe = True
+    if pii_entities and not redact:
+        is_safe = False
+    if toxicity_scores and toxicity_scores.toxicity > toxicity_threshold:
+        is_safe = False
+    if prompt_injection_result and prompt_injection_result.is_injection:
+        is_safe = False
+
+    processing_time = (time.time() - start_time) * 1000
+    if record_prometheus:
+        try:
+            if _PROM and METRIC_FILTER_REQUESTS is not None:
+                METRIC_FILTER_REQUESTS.labels(
+                    redact=str(bool(redact)).lower(),
+                ).inc()
+            if _PROM and METRIC_FILTER_LATENCY_MS is not None:
+                METRIC_FILTER_LATENCY_MS.observe(processing_time)
+            if _PROM and METRIC_PII_COUNT is not None:
+                METRIC_PII_COUNT.observe(len(pii_entities))
+            if _PROM and METRIC_FILTER_UNSAFE is not None and not is_safe:
+                METRIC_FILTER_UNSAFE.inc()
+        except Exception:
+            pass
+    if _OTEL and span is not None:
+        try:
+            span.set_attribute("processing.ms", round(processing_time, 2))
+            span.set_attribute("safe", bool(is_safe))
+            span.set_attribute("pii.count", len(pii_entities))
+        except Exception:
+            pass
+
+    result_id = uuid4()
+    response = ContentFilterResponse(
+        id=result_id,
+        original_content=request.content,
+        filtered_content=filtered_content if filtered_content != request.content else None,
+        pii_detected=pii_entities,
+        toxicity_scores=toxicity_scores,
+        prompt_injection=prompt_injection_result,
+        is_safe=is_safe,
+        filters_applied=request.filters,
+        analyzed_at=datetime.utcnow(),
+        processing_time_ms=round(processing_time, 2)
+    )
+
+    if persist_result:
+        filter_results[result_id] = response
+
+    return response
+
+
 @router.post(
     "/filter",
     response_model=ContentFilterResponse,
@@ -583,9 +771,11 @@ async def filter_content(
     This unified endpoint provides:
     - **Prompt Injection Detection**: Hybrid DeBERTa + Regex (92% accuracy)
     - **PII Detection**: GLiNER ML-based + Regex (93% accuracy)
-    - **Toxicity Analysis**: Heuristic or Detoxify model-based
+    - **Toxicity Analysis**: ML-based (unitary/toxic-bert, multi-label Jigsaw fine-tune)
     
-    All filters can be applied simultaneously in a single API call for optimal performance.
+    **Performance**: With default settings, PII, toxicity, and prompt-injection phases run **concurrently**
+    (via thread offload) so wall time is close to the slowest phase, not the sum of all phases.
+    Set `CONTENT_FILTER_PARALLEL_ML=false` to force strictly sequential execution.
     
     **Default Filters**: `["pii", "toxicity", "prompt_injection"]`
     
@@ -601,207 +791,133 @@ async def filter_content(
     **Response includes**:
     - `is_safe`: Overall safety assessment (false if any threat detected)
     - `pii_detected`: List of PII entities with confidence scores
-    - `toxicity_scores`: Toxicity metrics across multiple categories
+    - `toxicity_scores`: Toxicity score with label from ML model
     - `prompt_injection`: Injection detection with risk score and patterns
     - `filtered_content`: Content with PII redacted (if redact=true)
     """
-    import time
-    # Top-level span for filter operation (nested under FastAPI request span)
     ctx = (
         _tracer.start_as_current_span("content_filter") if _OTEL else nullcontext()
     )
     with ctx as span:  # type: ignore
-        start_time = time.time()
+        # --- Resolve template pack (if the API key has one attached) ---
+        pack_config = None
+        current_user, api_key_id = auth_data
+        if api_key_id:
+            pack_name = get_api_key_template_pack(api_key_id)
+            if pack_name:
+                try:
+                    from api.routes.policies import TemplatePack, get_template_pack_config
+                    pack_config = get_template_pack_config(TemplatePack(pack_name))
+                except Exception:
+                    pack_config = None
 
-        # Load defaults from DB (if any) and merge with request
+        # --- Load org-level DB defaults ---
         defaults = get_default("content_filter_defaults") if _DB_OK else None
+
+        # --- Merge priority: explicit request > pack > DB defaults > system defaults ---
+        # redact: None means "not set by caller" — use pack then DB then False
         if request.redact is not None:
             redact = request.redact
+        elif pack_config is not None:
+            redact = pack_config.redact
         elif defaults and "redact" in defaults:
             redact = bool(defaults["redact"])
         else:
             redact = False
-        custom_pii_patterns = request.custom_pii_patterns or (defaults.get("custom_pii_patterns") if defaults else None)
-        custom_toxic_words = request.custom_toxic_words or (defaults.get("custom_toxic_words") if defaults else None)
-        custom_severe_words = request.custom_severe_words or (defaults.get("custom_severe_words") if defaults else None)
-        toxicity_threshold = request.toxicity_threshold if request.toxicity_threshold is not None else (defaults.get("toxicity_threshold", 0.7) if defaults else 0.7)
-        use_model_toxicity = request.use_model_toxicity or (defaults.get("use_model_toxicity") if defaults else False)
-        use_presidio_pii = request.use_presidio_pii or (defaults.get("use_presidio_pii") if defaults else False)
 
-        if _OTEL and span is not None:
+        # filters: if the request contains only the default factory value AND a pack is attached,
+        # let the pack override the filter list
+        _default_filters = {FilterType.PII, FilterType.TOXICITY, FilterType.PROMPT_INJECTION}
+        if pack_config is not None and set(request.filters) == _default_filters:
             try:
-                span.set_attribute("filters", ",".join(request.filters))
-                span.set_attribute("redact", bool(redact))
-                span.set_attribute("toxicity.threshold", float(request.toxicity_threshold))
-                span.set_attribute("toxicity.use_model", bool(request.use_model_toxicity))
-                span.set_attribute("pii.custom_patterns", int(bool(request.custom_pii_patterns)))
+                request.filters = [FilterType(f) for f in pack_config.filters]
             except Exception:
-                pass
+                pass  # Keep original if pack has an unrecognised filter
 
-        pii_entities: List[PIIEntity] = []
-        toxicity_scores = None
-        prompt_injection_result = None
-        filtered_content = request.content
-
-        # Apply PII
-        if FilterType.PII in request.filters:
-            subctx = (
-                _tracer.start_as_current_span("pii_detection") if _OTEL else nullcontext()
+        # custom_pii_patterns: merge pack patterns with any explicit per-request patterns
+        if pack_config is not None and pack_config.custom_pii_patterns:
+            merged_patterns = dict(pack_config.custom_pii_patterns)
+            if request.custom_pii_patterns:
+                merged_patterns.update(request.custom_pii_patterns)
+            custom_pii_patterns: Optional[Dict[str, str]] = merged_patterns
+        else:
+            custom_pii_patterns = request.custom_pii_patterns or (
+                defaults.get("custom_pii_patterns") if defaults else None
             )
-            with subctx as subspan:  # type: ignore
-                if use_presidio_pii:
-                    pii_entities, presidio_redacted = detect_pii_presidio(request.content)
-                    if redact and presidio_redacted is not None:
-                        filtered_content = presidio_redacted
-                else:
-                    pii_entities = detect_pii(
-                        request.content, custom_patterns=custom_pii_patterns
-                    )
-                if _OTEL and subspan is not None:
-                    try:
-                        subspan.set_attribute("pii.count", len(pii_entities))
-                    except Exception:
-                        pass
-                if redact and pii_entities and not use_presidio_pii:
-                    redctx = (
-                        _tracer.start_as_current_span("pii_redaction") if _OTEL else nullcontext()
-                    )
-                    with redctx:  # type: ignore
-                        filtered_content = redact_pii(request.content, pii_entities)
 
-        # Apply Toxicity
-        if FilterType.TOXICITY in request.filters:
-            toxctx = (
-                _tracer.start_as_current_span("toxicity_analysis") if _OTEL else nullcontext()
-            )
-            with toxctx as toxspan:  # type: ignore
-                if use_model_toxicity:
-                    toxicity_scores = analyze_toxicity_model(request.content)
-                if toxicity_scores is None:
-                    toxicity_scores = analyze_toxicity(
-                        request.content,
-                        custom_toxic_words=custom_toxic_words,
-                        custom_severe_words=custom_severe_words,
-                    )
-                if _OTEL and toxspan is not None and toxicity_scores is not None:
-                    try:
-                        toxspan.set_attribute("toxicity.score", float(toxicity_scores.toxicity))
-                        toxspan.set_attribute("toxicity.severe", float(toxicity_scores.severe_toxicity))
-                    except Exception:
-                        pass
+        # toxicity_threshold: if the request value equals the system default (0.7) and a pack
+        # is attached with a different value, use the pack value
+        _system_default_threshold = 0.7
+        if pack_config is not None and request.toxicity_threshold == _system_default_threshold:
+            toxicity_threshold = pack_config.toxicity_threshold
+        elif request.toxicity_threshold is not None:
+            toxicity_threshold = request.toxicity_threshold
+        else:
+            toxicity_threshold = defaults.get("toxicity_threshold", _system_default_threshold) if defaults else _system_default_threshold
 
-        # Apply Prompt Injection Detection
-        if FilterType.PROMPT_INJECTION in request.filters:
-            pictx = (
-                _tracer.start_as_current_span("prompt_injection_detection") if _OTEL else nullcontext()
-            )
-            with pictx as pispan:  # type: ignore
-                if PROMPT_INJECTION_AVAILABLE and get_detector is not None:
-                    try:
-                        detector = get_detector()
-                        if detector is None:
-                            logger.error("Detector is None after get_detector() call")
-                            raise ValueError("Detector not initialized")
-                        
-                        logger.debug(f"Calling detector.detect() with content length: {len(request.content)}")
-                        detection_result = detector.detect(request.content)
-                        logger.debug(f"Detection result: {detection_result}")
-                        
-                        # Extract relevant info for response
-                        prompt_injection_result = PromptInjectionResult(
-                            is_injection=detection_result["is_injection"],
-                            confidence=detection_result["confidence"],
-                            risk_score=detection_result.get("risk_score", detection_result["confidence"]),
-                            recommendation=detection_result["recommendation"],
-                            patterns_matched=[
-                                p["pattern"] for p in detection_result.get("regex_results", {}).get("patterns_matched", [])
-                            ] if "regex_results" in detection_result else []
-                        )
-                        
-                        logger.info(f"Prompt injection check: is_injection={prompt_injection_result.is_injection}, confidence={prompt_injection_result.confidence}")
-                        
-                        if _OTEL and pispan is not None:
-                            try:
-                                pispan.set_attribute("injection.detected", bool(detection_result["is_injection"]))
-                                pispan.set_attribute("injection.confidence", float(detection_result["confidence"]))
-                            except Exception:
-                                pass
-                    except Exception as e:
-                        logger.error(f"Prompt injection detection failed: {e}", exc_info=True)
-                        # Return a safe default response so the API doesn't break
-                        prompt_injection_result = PromptInjectionResult(
-                            is_injection=False,
-                            confidence=0.0,
-                            risk_score=0.0,
-                            recommendation="ERROR - Detection unavailable",
-                            patterns_matched=[]
-                        )
-                else:
-                    logger.warning(f"Prompt injection detector not available. AVAILABLE={PROMPT_INJECTION_AVAILABLE}, get_detector={get_detector}")
-                    # Return a default response indicating detector is unavailable
-                    prompt_injection_result = PromptInjectionResult(
-                        is_injection=False,
-                        confidence=0.0,
-                        risk_score=0.0,
-                        recommendation="UNAVAILABLE - Detector not loaded",
-                        patterns_matched=[]
-                    )
-
-        # Determine if content is safe
-        is_safe = True
-        if pii_entities and not redact:
-            is_safe = False
-        if toxicity_scores and toxicity_scores.toxicity > toxicity_threshold:
-            is_safe = False
-        if prompt_injection_result and prompt_injection_result.is_injection:
-            is_safe = False
-
-        processing_time = (time.time() - start_time) * 1000
-        # Metrics
-        try:
-            if _PROM and METRIC_FILTER_REQUESTS is not None:
-                METRIC_FILTER_REQUESTS.labels(
-                    redact=str(bool(redact)).lower(),
-                    use_model_toxicity=str(bool(getattr(request, "use_model_toxicity", False))).lower(),
-                ).inc()
-            if _PROM and METRIC_FILTER_LATENCY_MS is not None:
-                METRIC_FILTER_LATENCY_MS.observe(processing_time)
-            if _PROM and METRIC_PII_COUNT is not None:
-                METRIC_PII_COUNT.observe(len(pii_entities))
-            if _PROM and METRIC_FILTER_UNSAFE is not None and not is_safe:
-                METRIC_FILTER_UNSAFE.inc()
-        except Exception:
-            pass
-        if _OTEL and span is not None:
-            try:
-                span.set_attribute("processing.ms", round(processing_time, 2))
-                span.set_attribute("safe", bool(is_safe))
-                span.set_attribute("pii.count", len(pii_entities))
-            except Exception:
-                pass
-
-        result_id = uuid4()
-        response = ContentFilterResponse(
-            id=result_id,
-            original_content=request.content,
-            filtered_content=filtered_content if filtered_content != request.content else None,
-            pii_detected=pii_entities,
-            toxicity_scores=toxicity_scores,
-            prompt_injection=prompt_injection_result,
-            is_safe=is_safe,
-            filters_applied=request.filters,
-            analyzed_at=datetime.utcnow(),
-            processing_time_ms=round(processing_time, 2)
+        use_presidio_pii = (
+            request.use_presidio_pii
+            or (pack_config.use_presidio_pii if pack_config else False)
+            or bool(defaults.get("use_presidio_pii") if defaults else False)
         )
 
-        filter_results[result_id] = response
-        
-        # Track API key usage in background (non-blocking)
-        current_user, api_key_id = auth_data
+        response = await _execute_filter_core(
+            request,
+            span,
+            redact=redact,
+            custom_pii_patterns=custom_pii_patterns,
+            toxicity_threshold=float(toxicity_threshold),
+            use_presidio_pii=bool(use_presidio_pii),
+            persist_result=True,
+            record_prometheus=True,
+        )
+
         if api_key_id:
             background_tasks.add_task(track_api_key_usage, api_key_id, "/filter", 0, 0.0)
-        
+
         return response
+
+
+@router.post(
+    "/filter/demo",
+    response_model=ContentFilterResponse,
+    summary="Try the content filter without authentication (playground)",
+    tags=["Content Filter"],
+)
+async def filter_content_demo(request: ContentFilterRequest):
+    """
+    Public playground: same analysis as ``POST /filter`` but **no login or API key**.
+    Disabled when ``ENABLE_PUBLIC_FILTER_DEMO=false``. Stricter length limit; does not
+    persist results or record Prometheus metrics.
+    """
+    settings = get_settings()
+    if not settings.enable_public_filter_demo:
+        raise HTTPException(status_code=404, detail="Demo endpoint is disabled")
+    max_len = settings.public_filter_demo_max_chars
+    if len(request.content) > max_len:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content exceeds demo limit ({max_len} characters)",
+        )
+
+    if request.redact is not None:
+        redact = request.redact
+    else:
+        redact = True
+    ctx = (
+        _tracer.start_as_current_span("content_filter_demo") if _OTEL else nullcontext()
+    )
+    with ctx as span:  # type: ignore
+        return await _execute_filter_core(
+            request,
+            span,
+            redact=redact,
+            custom_pii_patterns=request.custom_pii_patterns,
+            toxicity_threshold=float(request.toxicity_threshold),
+            use_presidio_pii=False,
+            persist_result=False,
+            record_prometheus=False,
+        )
 
 
 @router.post("/pii/detect", response_model=List[PIIEntity])
