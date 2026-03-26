@@ -34,24 +34,21 @@ _ = d.model; \
 print('✓ GLiNER edge model (ONNX) pre-downloaded')" \
   || echo "⚠ GLiNER pre-download skipped (will download on first use)"
 
-# Toxicity model (unitary/toxic-bert, ~420MB, multi-label Jigsaw fine-tune)
-# Replaces citizenlab/distilbert which had false positives on common short phrases.
-# Pre-downloading eliminates cold-start download delay.
+# Toxicity model (unitary/toxic-bert, ~440MB safetensors only)
+# ignore_patterns excludes the legacy pytorch_model.bin (duplicate of safetensors),
+# cutting ~440MB from the image without affecting runtime.
 RUN python -c "\
-from models.toxicity_detector import detect_toxicity; \
-detect_toxicity('warmup'); \
+from huggingface_hub import snapshot_download; \
+snapshot_download('unitary/toxic-bert', ignore_patterns=['*.bin', 'flax_model*', 'tf_model*', 'rust_model*']); \
 print('✓ Toxicity model (unitary/toxic-bert) pre-downloaded')" \
   || echo "⚠ Toxicity pre-download skipped (will download on first use)"
 
-# DeBERTa model warmup (~300MB with ONNX)
-# Pre-downloads ProtectAI DeBERTa model for prompt injection detection
-# This adds ~300MB to image size but eliminates first-run download (3-5s cold start)
-# Recommended for production environments
-RUN python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
-    model_name = 'protectai/deberta-v3-base-prompt-injection-v2'; \
-    AutoTokenizer.from_pretrained(model_name); \
-    AutoModelForSequenceClassification.from_pretrained(model_name); \
-    print('✓ DeBERTa model pre-downloaded')" || echo "⚠ DeBERTa pre-download skipped (will download on first use)"
+# DeBERTa model (~300MB safetensors only)
+# ignore_patterns excludes pytorch_model.bin duplicate, saving ~300MB.
+RUN python -c "\
+from huggingface_hub import snapshot_download; \
+snapshot_download('protectai/deberta-v3-base-prompt-injection-v2', ignore_patterns=['*.bin', 'flax_model*', 'tf_model*', 'rust_model*']); \
+print('✓ DeBERTa model pre-downloaded')" || echo "⚠ DeBERTa pre-download skipped (will download on first use)"
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash app \
