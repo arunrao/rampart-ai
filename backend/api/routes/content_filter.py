@@ -42,7 +42,7 @@ except ImportError as e:
 
 # Configuration
 PII_DETECTION_ENGINE = os.getenv("PII_DETECTION_ENGINE", "hybrid")  # hybrid, gliner, regex, presidio
-PII_MODEL_TYPE = os.getenv("PII_MODEL_TYPE", "balanced")  # edge, balanced, accurate
+PII_MODEL_TYPE = os.getenv("PII_MODEL_TYPE", "edge")  # edge (default, fastest ONNX), balanced, accurate
 PII_CONFIDENCE_THRESHOLD = float(os.getenv("PII_CONFIDENCE_THRESHOLD", "0.7"))
 
 # Optional DB-backed defaults availability

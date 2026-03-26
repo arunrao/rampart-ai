@@ -108,9 +108,10 @@ echo "  Starting instance refresh..."
 REFRESH_ID=$(aws autoscaling start-instance-refresh \
   --auto-scaling-group-name "$ASG_NAME" \
   --preferences '{
-    "MinHealthyPercentage": 50,
+    "MinHealthyPercentage": 100,
+    "MaxHealthyPercentage": 200,
     "InstanceWarmup": 180,
-    "CheckpointPercentages": [50, 100],
+    "CheckpointPercentages": [100],
     "CheckpointDelay": 30,
     "SkipMatching": false
   }' \

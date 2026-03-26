@@ -81,52 +81,96 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+# Global readiness flag — False while ML models are still loading.
+# The /health endpoint always returns 200 so the ALB accepts the instance
+# immediately.  All other API routes return 503 + a friendly maintenance page
+# until this flips to True (typically ~2-3 min after container start).
+_models_ready: bool = False
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan events"""
-    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
-    logger.info(f"Environment: {settings.environment}")
-    
-    # Initialize database
+_MAINTENANCE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="15">
+  <title>Rampart – Starting up</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0;
+           display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { text-align: center; max-width: 420px; padding: 2.5rem; }
+    .logo { font-size: 2rem; font-weight: 800; color: #6366f1; margin-bottom: .5rem; }
+    h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+    p  { color: #94a3b8; font-size: .9rem; line-height: 1.6; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+           background: #6366f1; margin: 0 3px; animation: pulse 1.4s infinite; }
+    .dot:nth-child(2) { animation-delay: .2s; }
+    .dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes pulse { 0%,80%,100% { opacity: .2; } 40% { opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">⚡ Rampart</div>
+    <h1>Loading AI security models…</h1>
+    <p>We're warming up our ML models.<br>This takes about 2–3 minutes.<br>
+       This page refreshes automatically.</p>
+    <br>
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+  </div>
+</body>
+</html>"""
+
+
+def _warmup_models_sync() -> None:
+    """Run all ML warmups synchronously in a background thread."""
+    global _models_ready
+    logger.info("Warming up ML models in background thread…")
     try:
-        init_all_tables()
-        logger.info("✓ Database tables initialized (users, provider_keys, policy_defaults)")
-    except Exception as e:
-        logger.warning(f"Failed to init database tables: {e}")
-    
-    # Warmup ML models to eliminate cold start delay
-    logger.info("Warming up ML models...")
-    try:
-        # Warmup 1: DeBERTa hybrid prompt injection detector
         from api.routes.security import get_detector
         detector = get_detector()
-        # Force DeBERTa to load by using force_deberta=True
         detector.detect("warmup test query", force_deberta=True)
         logger.info("✓ DeBERTa prompt injection detector warmed up")
     except Exception as e:
         logger.warning(f"DeBERTa warmup failed: {e}")
-    
+
     try:
-        # Warmup 2: GLiNER PII detector
         from api.routes.content_filter import detect_pii
-        # Use longer text with varied PII to properly warmup GLiNER
         detect_pii("Contact John Smith at john.smith@example.com or call 555-123-4567")
         logger.info("✓ GLiNER PII detector warmed up")
     except Exception as e:
         logger.warning(f"GLiNER warmup failed: {e}")
-    
+
     try:
-        # Warmup 3: Toxicity ML detector
         from models.toxicity_detector import warmup as toxicity_warmup
         toxicity_warmup()
     except Exception as e:
         logger.warning(f"Toxicity model warmup failed: {e}")
-    
-    logger.info("✓ All ML models ready")
-    
+
+    _models_ready = True
+    logger.info("✓ All ML models ready — serving traffic")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan events"""
+    import asyncio, threading
+    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"Environment: {settings.environment}")
+
+    # Initialize database synchronously (fast, must complete before serving)
+    try:
+        init_all_tables()
+        logger.info("✓ Database tables initialized")
+    except Exception as e:
+        logger.warning(f"Failed to init database tables: {e}")
+
+    # Load ML models in a background thread so the app starts accepting
+    # requests (and ALB health checks) immediately.  API routes return a
+    # friendly 503 maintenance page until _models_ready flips to True.
+    thread = threading.Thread(target=_warmup_models_sync, daemon=True, name="ml-warmup")
+    thread.start()
+
     yield
-    
+
     # Cleanup
     logger.info("Shutting down Project Rampart")
 
@@ -141,6 +185,25 @@ app = FastAPI(
     openapi_url=f"{settings.api_prefix}/openapi.json",
     lifespan=lifespan
 )
+
+# Maintenance-mode middleware — outermost so it runs before all other middleware.
+# Passes /health through unconditionally (ALB needs it to register the instance).
+# All other paths get a friendly 503 HTML page until _models_ready is True.
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import HTMLResponse
+
+class MaintenanceModeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        health_path = f"{settings.api_prefix}/health"
+        if not _models_ready and not request.url.path.startswith(health_path):
+            return HTMLResponse(
+                content=_MAINTENANCE_HTML,
+                status_code=503,
+                headers={"Retry-After": "30"},
+            )
+        return await call_next(request)
+
+app.add_middleware(MaintenanceModeMiddleware)
 
 # Security middleware (order matters - applied in reverse)
 # 1. Request size limit (first check)

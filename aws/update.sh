@@ -95,7 +95,20 @@ if [ -n "$EXISTING_REFRESH" ]; then
     aws autoscaling cancel-instance-refresh \
       --auto-scaling-group-name "$ASG_NAME" \
       --region $AWS_REGION
-    sleep 5
+    echo "  Waiting for cancellation to complete..."
+    for i in $(seq 1 12); do
+      sleep 5
+      STATUS=$(aws autoscaling describe-instance-refreshes \
+        --auto-scaling-group-name "$ASG_NAME" \
+        --region $AWS_REGION \
+        --query 'InstanceRefreshes[0].Status' \
+        --output text)
+      echo "    Status: $STATUS"
+      if [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "Failed" ]; then
+        echo "  ✓ Previous refresh cancelled"
+        break
+      fi
+    done
 fi
 
 # Start instance refresh with proper configuration
@@ -103,9 +116,10 @@ echo "  Starting instance refresh..."
 REFRESH_ID=$(aws autoscaling start-instance-refresh \
   --auto-scaling-group-name "$ASG_NAME" \
   --preferences '{
-    "MinHealthyPercentage": 50,
+    "MinHealthyPercentage": 100,
+    "MaxHealthyPercentage": 200,
     "InstanceWarmup": 300,
-    "CheckpointPercentages": [50, 100],
+    "CheckpointPercentages": [100],
     "CheckpointDelay": 60,
     "SkipMatching": false
   }' \

@@ -53,31 +53,28 @@ class GLiNERPIIDetector:
         "accurate": "knowledgator/gliner-pii-base-v1.0",   # F1 81.0% — FP16  ONNX ~330MB
     }
     
-    # Default PII entity labels for GLiNER
+    # Default PII entity labels for GLiNER.
+    # Keep this list lean — GLiNER inference scales as O(tokens × labels),
+    # so redundant synonyms ("email" + "email address") double the work.
     DEFAULT_LABELS = [
-        "email address",
         "email",
         "phone number",
-        "phone",
         "social security number",
-        "ssn",
         "credit card number",
-        "credit card",
         "ip address",
         "person name",
-        "person",
-        "full name",
-        "address",
         "street address",
         "date of birth",
-        "dob",
         "passport number",
         "driver license",
-        "bank account",
-        "routing number",
+        "bank account number",
         "medical record number",
-        "health insurance number",
     ]
+
+    # For long inputs the model is called in overlapping chunks. Each chunk
+    # is capped at this many characters so that a 600-char demo input doesn't
+    # trigger disproportionately slow inference on large span matrices.
+    _MAX_CHUNK_CHARS: int = 400
     
     def __init__(
         self,
@@ -150,6 +147,29 @@ class GLiNERPIIDetector:
             logger.error(f"Failed to load GLiNER model: {e}")
             return None
     
+    def _chunk_text(self, text: str, chunk_size: int) -> List[Tuple[str, int]]:
+        """
+        Split text into overlapping word-boundary chunks.
+        Returns list of (chunk_text, start_offset) tuples.
+        Overlap of 50 chars ensures entities near chunk boundaries aren't missed.
+        """
+        if len(text) <= chunk_size:
+            return [(text, 0)]
+
+        chunks: List[Tuple[str, int]] = []
+        overlap = 50
+        pos = 0
+        while pos < len(text):
+            end = min(pos + chunk_size, len(text))
+            # Align to word boundary to avoid cutting tokens mid-word
+            if end < len(text):
+                boundary = text.rfind(" ", pos, end)
+                if boundary > pos:
+                    end = boundary
+            chunks.append((text[pos:end], pos))
+            pos = end - overlap if end < len(text) else len(text)
+        return chunks
+
     def detect(
         self,
         text: str,
@@ -157,48 +177,47 @@ class GLiNERPIIDetector:
         threshold: Optional[float] = None
     ) -> List[PIIEntity]:
         """
-        Detect PII entities in text
-        
-        Args:
-            text: Input text to analyze
-            labels: Custom entity labels (uses defaults if None)
-            threshold: Custom confidence threshold (uses default if None)
-        
-        Returns:
-            List of detected PII entities
+        Detect PII entities in text.
+        Long inputs are split into overlapping chunks so that inference time
+        stays roughly constant regardless of document length.
         """
         if not self.model:
             logger.warning("GLiNER model not available, falling back to regex")
             return self._regex_fallback(text)
-        
-        # Use provided labels or defaults
+
         entity_labels = labels or self.labels
         conf_threshold = threshold or self.confidence_threshold
-        
+
         try:
-            # Run GLiNER prediction
-            predictions = self.model.predict_entities(
-                text,
-                entity_labels,
-                threshold=conf_threshold
-            )
-            
-            # Convert to PIIEntity format
-            entities = []
-            for pred in predictions:
-                entity = PIIEntity(
-                    type=self._map_label_to_type(pred["label"]),
-                    value=pred["text"],
-                    start=pred["start"],
-                    end=pred["end"],
-                    confidence=float(pred["score"]),
-                    label=pred["label"]
+            chunks = self._chunk_text(text, self._MAX_CHUNK_CHARS)
+            seen: set = set()
+            entities: List[PIIEntity] = []
+
+            for chunk_text, offset in chunks:
+                predictions = self.model.predict_entities(
+                    chunk_text,
+                    entity_labels,
+                    threshold=conf_threshold,
                 )
-                entities.append(entity)
-            
-            logger.debug(f"GLiNER detected {len(entities)} PII entities")
+                for pred in predictions:
+                    abs_start = pred["start"] + offset
+                    abs_end = pred["end"] + offset
+                    dedup_key = (pred["label"], pred["text"], abs_start)
+                    if dedup_key in seen:
+                        continue
+                    seen.add(dedup_key)
+                    entities.append(PIIEntity(
+                        type=self._map_label_to_type(pred["label"]),
+                        value=pred["text"],
+                        start=abs_start,
+                        end=abs_end,
+                        confidence=float(pred["score"]),
+                        label=pred["label"],
+                    ))
+
+            logger.debug(f"GLiNER detected {len(entities)} PII entities in {len(chunks)} chunk(s)")
             return entities
-            
+
         except Exception as e:
             logger.error(f"GLiNER prediction failed: {e}, falling back to regex")
             return self._regex_fallback(text)

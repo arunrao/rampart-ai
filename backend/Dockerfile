@@ -63,5 +63,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=2 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
 
-# Run the application
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run with 2 workers — two independent GIL environments so concurrent requests
+# don't queue behind each other's ML inference. Each worker loads its own model
+# copies; c5.xlarge (8 GB RAM) has enough headroom for 2 × ~940 MB model sets.
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
