@@ -5,7 +5,21 @@ All notable changes to Project Rampart will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.6] - 2026-03-26
+## [0.2.6] - 2026-04-11
+
+### Added
+
+- **Prompt injection chunked scanning for long inputs** — `HybridPromptInjectionDetector` now handles arbitrarily long text without silent truncation.  The detector splits input into overlapping 1,800-character chunks (200-character overlap so injections near a boundary are never missed).  When more than one chunk is produced, each chunk is scored by DeBERTa in its own thread via `ThreadPoolExecutor` (ONNX Runtime and PyTorch release the GIL during inference so threads run concurrently on multi-core hardware, up to `MAX_CHUNK_WORKERS=8`).  The chunk with the highest injection confidence is returned as the representative result (worst-case semantics).  The number of chunks evaluated is reported in `detection_details.deberta.chunks_scanned`.
+  - Previously inputs longer than ~2,048 characters were silently truncated, making injections buried deep in long documents (e.g. embedded inside pasted web pages) completely undetectable.
+  - **Files**: `backend/models/prompt_injection_detector.py` — new `_chunk_text`, `_detect_deberta_chunked` methods; constants `CHUNK_SIZE`, `CHUNK_OVERLAP`, `MAX_CHUNK_WORKERS` on `HybridPromptInjectionDetector`.
+
+### Fixed
+
+- **`patterns_matched` always empty in content filter API** — `content_filter.py` was reading from the wrong key path (`detection_result["regex_results"]["patterns_matched"][]["pattern"]`) but the detector returns `detection_details.regex.detected_patterns[].name`.  The list now also includes a `"deberta_injection"` sentinel whenever DeBERTa detects injection without a named regex pattern, ensuring every detection signal is visible in the API response.
+  - **File**: `backend/api/routes/content_filter.py`
+
+- **`is_safe` for prompt injection now driven by threat list presence** — `is_safe` was set to `False` based on the threshold-gated `is_injection` bool, which silently flipped with `PROMPT_INJECTION_THRESHOLD` tuning.  It now uses `len(patterns_matched) > 0`: if the detector identified anything — a named regex pattern or a DeBERTa hit — the content is flagged unsafe, deterministically and independent of threshold configuration.
+  - **File**: `backend/api/routes/content_filter.py`
 
 ### Changed
 

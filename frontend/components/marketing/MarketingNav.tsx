@@ -28,7 +28,7 @@ type MarketingNavProps = {
   badge?: string;
 };
 
-export default function MarketingNav({ badge = "v0.2.5" }: MarketingNavProps) {
+export default function MarketingNav({ badge = "v0.2.6" }: MarketingNavProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [devOpen, setDevOpen] = useState(false);
   const devRef = useRef<HTMLDivElement | null>(null);

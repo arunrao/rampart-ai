@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>AI Security & Observability Platform</strong> | v0.2.5
+  <strong>AI Security & Observability Platform</strong> | v0.2.6
 </p>
 
 <p align="center">
@@ -95,16 +95,19 @@ Application → Rampart Security Gateway → LLM Provider (OpenAI/Anthropic/etc.
 
 **Detection Methods:**
 - **Hybrid Mode** (recommended): Regex pre-filter + DeBERTa ML deep analysis
-  - 92% accuracy with <10ms average latency
+  - 92% accuracy with ~50ms average latency (DeBERTa always runs)
   - ONNX-optimized for 3x faster inference
-  - Smart threshold-based triggering (90% fast path, 10% deep analysis)
+  - **Long-input chunked scanning**: inputs longer than 1,800 characters are split into overlapping chunks; each chunk is scored in parallel via `ThreadPoolExecutor` so injections buried anywhere in a long document are always caught
 - **Regex Mode**: Pattern-based matching (70% accuracy, 0.1ms)
 - **DeBERTa Mode**: ML-only detection using ProtectAI models (95% accuracy, 15-25ms)
 
 **Architecture:**
 ```
-Input → Regex Filter (0.1ms) → Low Risk (<0.3)? → Allow ✓
-                              → High Risk (≥0.3)? → DeBERTa (20ms) → Block/Allow
+Input → Regex Filter (full text, no length limit)
+      → DeBERTa chunked scanner:
+           short input  → single inference call (~50ms)
+           long input   → overlapping 1,800-char chunks → parallel threads → max-confidence result
+      → Merge (DeBERTa 70% weight, Regex 30% weight) → Block / Flag / Monitor / Allow
 ```
 
 **Risk-based Recommendations:**
@@ -117,17 +120,13 @@ Input → Regex Filter (0.1ms) → Low Risk (<0.3)? → Allow ✓
 ```json
 {
   "is_injection": true,
-  "confidence": 0.85,
-  "risk_score": 0.85,
-  "detected_patterns": [
-    {
-      "name": "instruction_override",
-      "severity": 0.9,
-      "description": "Attempts to override previous instructions",
-      "matched_text": "ignore all previous instructions"
-    }
-  ],
-  "recommendation": "BLOCK - High-risk injection attempt"
+  "confidence": 0.95,
+  "risk_score": 0.95,
+  "recommendation": "BLOCK - Critical threat detected",
+  "detection_details": {
+    "regex": { "detected_patterns": [{"name": "instruction_override", ...}] },
+    "deberta": { "confidence": 0.97, "label": "INJECTION", "chunks_scanned": 3 }
+  }
 }
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "project-rampart-frontend",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "scripts": {
     "dev": "node --max-old-space-size=12288 ./node_modules/next/dist/bin/next dev",
