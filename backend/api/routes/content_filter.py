@@ -662,6 +662,22 @@ async def _execute_filter_core(
             status, payload = result
             if status == "ok" and isinstance(payload, dict):
                 detection_result = payload
+
+                # Build the full threat list from every detection source so
+                # callers always see exactly what was found:
+                #  - regex named patterns (e.g. "instruction_override")
+                #  - a "deberta_injection" sentinel when the ML model fires
+                #    but regex didn't name the pattern
+                _regex_patterns: List[str] = [
+                    p["name"]
+                    for p in detection_result.get("detection_details", {})
+                        .get("regex", {})
+                        .get("detected_patterns", [])
+                ]
+                _deberta = detection_result.get("deberta_result", {})
+                if _deberta.get("is_injection") and "deberta_injection" not in _regex_patterns:
+                    _regex_patterns.append("deberta_injection")
+
                 prompt_injection_result = PromptInjectionResult(
                     is_injection=detection_result["is_injection"],
                     confidence=detection_result["confidence"],
@@ -669,14 +685,7 @@ async def _execute_filter_core(
                         "risk_score", detection_result["confidence"]
                     ),
                     recommendation=detection_result["recommendation"],
-                    patterns_matched=[
-                        p["pattern"]
-                        for p in detection_result.get("regex_results", {}).get(
-                            "patterns_matched", []
-                        )
-                    ]
-                    if "regex_results" in detection_result
-                    else [],
+                    patterns_matched=_regex_patterns,
                 )
                 logger.info(
                     f"Prompt injection check: is_injection={prompt_injection_result.is_injection}, "
@@ -708,7 +717,7 @@ async def _execute_filter_core(
         is_safe = False
     if toxicity_scores and toxicity_scores.toxicity > toxicity_threshold:
         is_safe = False
-    if prompt_injection_result and prompt_injection_result.is_injection:
+    if prompt_injection_result and len(prompt_injection_result.patterns_matched) > 0:
         is_safe = False
 
     processing_time = (time.time() - start_time) * 1000

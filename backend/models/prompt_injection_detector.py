@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import logging
 from functools import lru_cache
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Suppress known PyTorch ONNX warnings (harmless compatibility issues)
 warnings.filterwarnings("ignore", message=".*scaled_dot_product_attention.*")
@@ -594,7 +595,74 @@ class HybridPromptInjectionDetector:
                 self.use_deberta = False
         else:
             logger.info("Hybrid detector running in regex-only mode")
-    
+
+    # Each chunk is ~450 tokens, safely within DeBERTa's 512-token limit.
+    # Overlap ensures injections that straddle a chunk boundary are still caught.
+    CHUNK_SIZE: int = 1800
+    CHUNK_OVERLAP: int = 200
+    # Cap parallel workers so a pathologically large document doesn't spawn
+    # hundreds of threads; ONNX/PyTorch release the GIL during inference so
+    # threads do run concurrently.
+    MAX_CHUNK_WORKERS: int = 8
+
+    def _chunk_text(self, text: str) -> List[str]:
+        """Split *text* into overlapping fixed-size chunks for DeBERTa."""
+        if len(text) <= self.CHUNK_SIZE:
+            return [text]
+        chunks: List[str] = []
+        start = 0
+        while start < len(text):
+            chunks.append(text[start : start + self.CHUNK_SIZE])
+            start += self.CHUNK_SIZE - self.CHUNK_OVERLAP
+        return chunks
+
+    def _detect_deberta_chunked(self, text: str) -> Tuple[Dict, int]:
+        """
+        Run DeBERTa over *text* using overlapping chunks so injections buried
+        at any position in a long document are caught.
+
+        When the text fits in a single chunk it calls ``detect`` directly.
+        When multiple chunks are needed each chunk is scored in its own thread
+        (ONNX Runtime / PyTorch release the GIL during inference, so threads
+        run concurrently on multi-core hardware).  The chunk with the highest
+        injection confidence is returned as the representative result.
+
+        Returns:
+            (worst-case chunk result, number of chunks scanned)
+        """
+        assert self.deberta_detector is not None
+        chunks = self._chunk_text(text)
+
+        if len(chunks) == 1:
+            return self.deberta_detector.detect(chunks[0]), 1
+
+        logger.debug(
+            "Long input detected (%d chars) — scanning %d chunks in parallel",
+            len(text),
+            len(chunks),
+        )
+
+        workers = min(len(chunks), self.MAX_CHUNK_WORKERS)
+        chunk_results: List[Dict] = []
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self.deberta_detector.detect, chunk): idx
+                for idx, chunk in enumerate(chunks)
+            }
+            for future in as_completed(futures):
+                try:
+                    chunk_results.append(future.result())
+                except Exception as exc:
+                    logger.warning("Chunk %d DeBERTa inference failed: %s", futures[future], exc)
+
+        if not chunk_results:
+            # All chunks failed — return a safe fallback
+            return {"is_injection": False, "confidence": 0.0, "label": "ERROR", "error": "all chunks failed"}, len(chunks)
+
+        # Worst-case semantics: surface the chunk with the highest injection signal
+        worst = max(chunk_results, key=lambda r: r.get("confidence", 0.0))
+        return worst, len(chunks)
+
     def detect(
         self,
         text: str,
@@ -612,7 +680,7 @@ class HybridPromptInjectionDetector:
         Returns:
             Detection result with combined insights
         """
-        # Stage 1: Fast regex filter
+        # Stage 1: Fast regex filter (scans full text — no length limit)
         regex_result = self.regex_detector.detect(text)
         
         # Fast mode: return regex result immediately
@@ -623,23 +691,17 @@ class HybridPromptInjectionDetector:
                 "latency_ms": 0.1
             }
         
-        # Always run DeBERTa for better accuracy (it's the primary detector)
-        # Regex is used as a fast pre-filter but shouldn't block DeBERTa
-        should_run_deberta = True  # Always run unless fast_mode is enabled
-        
-        # Skip DeBERTa only if explicitly disabled or in fast mode
-        # (fast_mode is already handled above)
-        
-        # Stage 2: DeBERTa deep analysis
+        # Stage 2: DeBERTa deep analysis with chunked scanning for long inputs.
+        # _detect_deberta_chunked transparently handles texts of any length:
+        # single chunk → direct call; multiple chunks → parallel ThreadPoolExecutor.
         import time
         start_time = time.time()
 
-        assert self.deberta_detector is not None
-        deberta_result = self.deberta_detector.detect(text)
+        deberta_result, chunks_scanned = self._detect_deberta_chunked(text)
         deberta_latency = (time.time() - start_time) * 1000  # Convert to ms
         
         # Merge results
-        merged_result = self._merge_results(regex_result, deberta_result, deberta_latency)
+        merged_result = self._merge_results(regex_result, deberta_result, deberta_latency, chunks_scanned)
         
         return merged_result
     
@@ -647,7 +709,8 @@ class HybridPromptInjectionDetector:
         self,
         regex_result: Dict,
         deberta_result: Dict,
-        deberta_latency: float
+        deberta_latency: float,
+        chunks_scanned: int = 1,
     ) -> Dict:
         """Combine regex and DeBERTa results intelligently"""
         
@@ -692,7 +755,8 @@ class HybridPromptInjectionDetector:
                 "deberta": {
                     "confidence": deberta_result["confidence"],
                     "label": deberta_result["label"],
-                    "model": deberta_result.get("model", "unknown")
+                    "model": deberta_result.get("model", "unknown"),
+                    "chunks_scanned": chunks_scanned,
                 }
             },
             
