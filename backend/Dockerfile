@@ -28,13 +28,14 @@ RUN mkdir -p /app/.cache/huggingface
 
 # Pre-download the models at the commit SHAs pinned in models/pinned_revisions.py so there
 # is no cold-start download and a Hub-side change cannot alter what the image executes.
-# GLiNER edge: keep onnx/model.onnx (fp32, the file the loader uses) + PyTorch fallback;
-# toxic-bert / DeBERTa: safetensors only (the .bin duplicates add ~740MB for nothing).
+# GLiNER edge: full snapshot (GLiNER.from_pretrained snapshots the whole repo, so any
+# excluded file forces a network fetch at runtime); toxic-bert / DeBERTa: safetensors
+# only (the .bin duplicates add ~740MB for nothing).
 RUN python -c "\
 from huggingface_hub import snapshot_download; \
 from models.pinned_revisions import PINNED_REVISIONS as P; \
 skip = ['*.bin', 'flax_model*', 'tf_model*', 'rust_model*']; \
-snapshot_download('knowledgator/gliner-pii-edge-v1.0', revision=P['knowledgator/gliner-pii-edge-v1.0'], ignore_patterns=['onnx/model_fp16.onnx', 'onnx/model_quint8.onnx']); \
+snapshot_download('knowledgator/gliner-pii-edge-v1.0', revision=P['knowledgator/gliner-pii-edge-v1.0']); \
 snapshot_download('unitary/toxic-bert', revision=P['unitary/toxic-bert'], ignore_patterns=skip); \
 snapshot_download('protectai/deberta-v3-base-prompt-injection-v2', revision=P['protectai/deberta-v3-base-prompt-injection-v2'], ignore_patterns=skip); \
 print('✓ Pinned models pre-downloaded')" \
