@@ -43,6 +43,11 @@ Parameters:
       - c5.2xlarge
     Description: EC2 instance type for simple deployment
 
+  SuperAdminEmails:
+    Type: String
+    Default: ""
+    Description: Comma-separated Google account emails granted the super-admin dashboard (SUPER_ADMIN_EMAILS)
+
   KeyPairName:
     Type: AWS::EC2::KeyPair::KeyName
     Description: EC2 Key Pair for SSH access
@@ -525,6 +530,7 @@ Resources:
                   - TRUSTED_PROXY_COUNT=1
                   # Marketing "Try it" playground (/try -> POST /filter/demo, unauthenticated)
                   - ENABLE_PUBLIC_FILTER_DEMO=true
+                  - SUPER_ADMIN_EMAILS=${SuperAdminEmails}
                   - SECRET_KEY=${!JWT_KEY}
                   - KEY_ENCRYPTION_SECRET=${!JWT_KEY}
                 ports:

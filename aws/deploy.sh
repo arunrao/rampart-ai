@@ -177,6 +177,10 @@ cat > /tmp/cfn-parameters.json << EOF
     "ParameterValue": "$DOMAIN_NAME"
   },
   {
+    "ParameterKey": "SuperAdminEmails",
+    "ParameterValue": "${SUPER_ADMIN_EMAILS:-}"
+  },
+  {
     "ParameterKey": "SSHAllowedCidr",
     "ParameterValue": "$SSH_ALLOWED_CIDR"
   }
