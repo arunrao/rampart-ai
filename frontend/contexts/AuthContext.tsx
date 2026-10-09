@@ -1,83 +1,72 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_URL, logoutSession, withSession } from "@/utils/auth";
 
 interface User {
   id: string;
   email: string;
+  is_super_admin?: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (token: string, user: User) => void;
-  logout: () => void;
+  /** Re-read the session from the backend (used after the OAuth callback). */
+  refreshUser: () => Promise<User | null>;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
+  isSuperAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+async function fetchCurrentUser(): Promise<User | null> {
+  // The session is an HttpOnly cookie; the browser attaches it, JS never sees it.
+  const res = await fetch(`${API_URL}/auth/me`, withSession());
+  if (!res.ok) return null;
+  return (await res.json()) as User;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  useEffect(() => {
-    // Check if user is logged in on mount
-    const token = localStorage.getItem("auth_token");
-    const userEmail = localStorage.getItem("user_email");
-
-    if (token && userEmail) {
-      // Verify token is still valid
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-        .then((res) => {
-          if (res.ok) {
-            return res.json();
-          }
-          throw new Error("Invalid token");
-        })
-        .then((data) => {
-          setUser(data);
-        })
-        .catch(() => {
-          // Token invalid, clear storage
-          localStorage.removeItem("auth_token");
-          localStorage.removeItem("user_email");
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    } else {
+  const refreshUser = useCallback(async () => {
+    try {
+      const u = await fetchCurrentUser();
+      setUser(u);
+      return u;
+    } catch {
+      setUser(null);
+      return null;
+    } finally {
       setLoading(false);
     }
   }, []);
 
-  const login = (token: string, user: User) => {
-    localStorage.setItem("auth_token", token);
-    localStorage.setItem("user_email", user.email);
-    setUser(user);
-  };
+  useEffect(() => {
+    // Check if user is logged in on mount
+    void refreshUser();
+  }, [refreshUser]);
 
-  const logout = () => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("user_email");
+  const logout = useCallback(async () => {
+    await logoutSession();
     setUser(null);
     router.push("/");
-  };
+  }, [router]);
 
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
-        login,
+        refreshUser,
         logout,
         isAuthenticated: !!user,
+        isSuperAdmin: !!user?.is_super_admin,
       }}
     >
       {children}

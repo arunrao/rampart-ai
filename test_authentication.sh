@@ -11,7 +11,8 @@ echo ""
 
 # Configuration
 API_BASE="http://localhost:8000/api/v1"
-JWT_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiZTc1NGRlN2YtMGFkZi00MGViLTgwZDQtMWNkZDg2YThmZDE5IiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwiZXhwIjoxNzU5NzcyNzIzLCJpYXQiOjE3NTk3NzA5MjN9.TN-Z9zq-4ecCFsWzfYw2oLw-ezITcspj0H77DIB_8XM"
+# Credentials come from the environment; never hardcode them here
+JWT_TOKEN="${RAMPART_JWT:?Set RAMPART_JWT to a dashboard JWT (copy from browser localStorage auth_token)}"
 
 # Test 1: Health Check
 echo "1️⃣ Testing API Health..."
@@ -27,14 +28,11 @@ echo ""
 
 # Test 2: Get existing API key (or create if none exists)
 echo "2️⃣ Getting API Key..."
-API_KEYS_RESPONSE=$(curl -s -X GET "$API_BASE/rampart-keys" \
-    -H "Authorization: Bearer $JWT_TOKEN")
+# Full keys are only shown once at creation, so reuse one from RAMPART_API_KEY or create a new one
+API_KEY="${RAMPART_API_KEY:-}"
 
-if echo "$API_KEYS_RESPONSE" | jq -e '. | length > 0' > /dev/null; then
-    API_KEY=$(echo "$API_KEYS_RESPONSE" | jq -r '.[0].key_preview' | sed 's/\*\*\*\*//')
-    # We need the full key, let's use the one we know works
-    API_KEY="rmp_live_bgUMwrx6F2qZ-Y-H7Ui_xeub6J7WYOIsW2j1xRjJftM"
-    echo "   ✅ Using existing API key: ${API_KEY:0:20}..."
+if [ -n "$API_KEY" ]; then
+    echo "   ✅ Using API key from RAMPART_API_KEY: ${API_KEY:0:12}..."
 else
     echo "   Creating new API key..."
     CREATE_RESPONSE=$(curl -s -X POST "$API_BASE/rampart-keys" \

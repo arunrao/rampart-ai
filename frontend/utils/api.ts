@@ -1,6 +1,7 @@
 /**
  * API utility functions with automatic session expiration handling
  */
+import { withSession } from './auth';
 
 export class SessionExpiredError extends Error {
   constructor() {
@@ -23,30 +24,15 @@ function getApiUrl(path: string): string {
  * Fetch wrapper that handles session expiration
  */
 export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = localStorage.getItem('auth_token');
-  
-  const headers = {
-    ...options.headers,
-    'Authorization': token ? `Bearer ${token}` : '',
-  };
-
   // Convert relative URLs to full API URLs
   const fullUrl = url.startsWith('http') ? url : getApiUrl(url);
 
-  const response = await fetch(fullUrl, {
-    ...options,
-    headers,
-  });
+  // Session is an HttpOnly cookie: send credentials + CSRF header, no token in JS
+  const response = await fetch(fullUrl, withSession(options));
 
   // Check for 401 Unauthorized (session expired)
   if (response.status === 401) {
-    // Clear auth data
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('user_email');
-    
-    // Redirect to login
     window.location.href = '/login';
-    
     throw new SessionExpiredError();
   }
 

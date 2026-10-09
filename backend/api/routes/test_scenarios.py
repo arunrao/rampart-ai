@@ -535,7 +535,7 @@ async def run_test_scenarios(
             elif scenario.category == TestCategory.TOXICITY:
                 filter_request = ContentFilterRequest(
                     content=scenario.test_input,
-                    filters=["toxicity"],
+                    filters=[FilterType.TOXICITY],
                     redact=False,
                 )
                 filter_response = await filter_content(filter_request, background_tasks, (current_user, None))

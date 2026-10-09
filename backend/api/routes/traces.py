@@ -8,6 +8,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from api.routes.auth import get_current_user, TokenData
+from api.memstore import BoundedDict
 
 router = APIRouter()
 
@@ -76,8 +77,12 @@ class SpanUpdate(BaseModel):
 
 
 # In-memory storage
-traces_db: Dict[UUID, Trace] = {}
-spans_db: Dict[UUID, Span] = {}
+traces_db: "BoundedDict[UUID, Trace]" = BoundedDict(10_000)
+spans_db: "BoundedDict[UUID, Span]" = BoundedDict(50_000)
+
+
+def _owns_trace(trace: Trace, user_id: UUID) -> bool:
+    return trace.user_id == str(user_id)
 
 
 @router.post("/traces", response_model=Trace, status_code=201)
@@ -112,7 +117,7 @@ async def list_traces(
     # Only return traces for the authenticated user
     filtered_traces = [
         t for t in traces_db.values() 
-        if not t.user_id or t.user_id == str(current_user.user_id)
+        if _owns_trace(t, current_user.user_id)
     ]
     
     if session_id:
@@ -136,7 +141,7 @@ async def get_trace(
     trace = traces_db[trace_id]
     
     # Verify ownership - return 404 to prevent enumeration
-    if trace.user_id and trace.user_id != str(current_user.user_id):
+    if not _owns_trace(trace, current_user.user_id):
         raise HTTPException(status_code=404, detail="Trace not found")
     
     return trace
@@ -147,8 +152,9 @@ async def create_span(
     span: SpanCreate,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Create a new span within a trace"""
-    if span.trace_id not in traces_db:
+    """Create a new span within a trace (only if the trace belongs to the current user)"""
+    parent_trace = traces_db.get(span.trace_id)
+    if not parent_trace or not _owns_trace(parent_trace, current_user.user_id):
         raise HTTPException(status_code=404, detail="Trace not found")
     
     span_id = uuid4()
@@ -190,7 +196,7 @@ async def update_span(
         raise HTTPException(status_code=404, detail="Span not found")
     
     parent_trace = traces_db[span.trace_id]
-    if parent_trace.user_id and parent_trace.user_id != str(current_user.user_id):
+    if not _owns_trace(parent_trace, current_user.user_id):
         raise HTTPException(status_code=404, detail="Span not found")
     
     # Update fields
@@ -232,7 +238,7 @@ async def get_trace_spans(
     
     # Verify ownership
     trace = traces_db[trace_id]
-    if trace.user_id and trace.user_id != str(current_user.user_id):
+    if not _owns_trace(trace, current_user.user_id):
         raise HTTPException(status_code=404, detail="Trace not found")
     
     trace_spans = [s for s in spans_db.values() if s.trace_id == trace_id]
@@ -254,12 +260,14 @@ async def get_analytics_summary(current_user: TokenData = Depends(get_current_us
     from api.db import get_conn
     from sqlalchemy import text
     
-    # Get trace-based analytics (JWT activity)
-    total_traces = len(traces_db)
-    total_spans = len(spans_db)
-    trace_tokens = sum(t.total_tokens for t in traces_db.values())
-    trace_cost = sum(t.total_cost for t in traces_db.values())
-    avg_latency = sum(t.total_latency_ms for t in traces_db.values()) / max(total_traces, 1)
+    # Get trace-based analytics (JWT activity, scoped to the current user)
+    user_traces = [t for t in list(traces_db.values()) if _owns_trace(t, current_user.user_id)]
+    user_trace_ids = {t.id for t in user_traces}
+    total_traces = len(user_traces)
+    total_spans = sum(1 for sp in list(spans_db.values()) if sp.trace_id in user_trace_ids)
+    trace_tokens = sum(t.total_tokens for t in user_traces)
+    trace_cost = sum(t.total_cost for t in user_traces)
+    avg_latency = sum(t.total_latency_ms for t in user_traces) / max(total_traces, 1)
     
     # Get API key usage analytics (includes web demo and application usage)
     api_key_requests = 0

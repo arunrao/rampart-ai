@@ -3,29 +3,45 @@ Cryptographic utilities for secure API key storage
 """
 import os
 import base64
+from functools import lru_cache
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from typing import Tuple
 
 
+MIN_KEY_ENCRYPTION_SECRET_LENGTH = 32
+# Legacy fixed salt. Set KEY_ENCRYPTION_SALT to a per-deployment random value for new
+# installs; changing it on an existing deployment invalidates every stored provider key.
+_DEFAULT_SALT = b"rampart-key-salt"
+# Do not change: existing ciphertexts are only recoverable with these exact KDF params.
+_PBKDF2_ITERATIONS = 100_000
+
+
+def _derive(secret: str, salt: bytes, iterations: int) -> bytes:
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=iterations)
+    return kdf.derive(secret.encode())
+
+
+@lru_cache(maxsize=4)
+def _cached_key(secret: str, salt: bytes) -> bytes:
+    return _derive(secret, salt, _PBKDF2_ITERATIONS)
+
+
 def get_encryption_key() -> bytes:
     """
-    Get or derive the encryption key for API keys.
-    In production, use a proper KMS or secrets manager.
+    Derive the AES-256 key used to encrypt stored provider API keys.
+    In production, prefer a KMS/secrets manager for KEY_ENCRYPTION_SECRET itself.
     """
     key_secret = os.getenv("KEY_ENCRYPTION_SECRET")
     if not key_secret:
         raise ValueError("KEY_ENCRYPTION_SECRET environment variable not set")
-    
-    # Derive a 32-byte key using PBKDF2HMAC
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=b"rampart-key-salt",  # In production, use unique salt per deployment
-        iterations=100000,
-    )
-    return kdf.derive(key_secret.encode())
+    if len(key_secret) < MIN_KEY_ENCRYPTION_SECRET_LENGTH:
+        raise ValueError(
+            f"KEY_ENCRYPTION_SECRET must be at least {MIN_KEY_ENCRYPTION_SECRET_LENGTH} characters"
+        )
+    salt = os.getenv("KEY_ENCRYPTION_SALT", "").encode() or _DEFAULT_SALT
+    return _cached_key(key_secret, salt)
 
 
 def encrypt_api_key(plaintext_key: str) -> Tuple[str, str]:

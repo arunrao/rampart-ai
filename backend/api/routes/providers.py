@@ -7,6 +7,7 @@ from typing import List, Optional
 from datetime import datetime
 from uuid import UUID
 from enum import Enum
+import logging
 
 from api.routes.auth import get_current_user, TokenData
 from api.security.crypto import encrypt_api_key, decrypt_api_key, mask_api_key, validate_api_key_format
@@ -14,6 +15,15 @@ from api.db import get_conn
 from sqlalchemy import text
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+class ProviderKeyDecryptionError(RuntimeError):
+    """A stored provider key exists but cannot be decrypted with the current KEY_ENCRYPTION_SECRET."""
+
+    def __init__(self, provider: str):
+        super().__init__(f"Stored {provider} API key could not be decrypted")
+        self.provider = provider
 
 
 class ProviderType(str, Enum):
@@ -195,6 +205,13 @@ async def set_provider_key(
         row = result.fetchone()
         conn.commit()
 
+        if row is None:
+            # RETURNING produced nothing: the UPDATE matched no row (key removed concurrently)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{provider.value} key changed concurrently; please retry"
+            )
+
         return ProviderKeyResponse(
             id=row[0],
             provider=ProviderType(row[1]),
@@ -284,6 +301,11 @@ def get_user_provider_key(user_id: UUID, provider: str) -> Optional[str]:
         
         try:
             return decrypt_api_key(result[0])
-        except Exception:
-            # If decryption fails, return None (key may be corrupted)
-            return None
+        except Exception as e:
+            # Surface this: a silent None here makes the LLM proxy fall back to the
+            # operator's system key, billing the user's traffic to the platform.
+            logger.error(
+                "Failed to decrypt %s provider key for user %s (KEY_ENCRYPTION_SECRET rotated?): %s",
+                provider, user_id, type(e).__name__,
+            )
+            raise ProviderKeyDecryptionError(provider) from e

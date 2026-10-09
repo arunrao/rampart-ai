@@ -2,7 +2,7 @@
 Content filtering endpoints - PII detection, toxicity, etc.
 """
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any, Tuple
 from functools import lru_cache
 from contextlib import nullcontext
@@ -15,8 +15,10 @@ import logging
 import asyncio
 
 from api.config import get_settings
+from api.memstore import BoundedDict
+from api.security.safe_regex import safe_finditer, validate_custom_patterns
 from api.routes.auth import get_current_user, TokenData
-from api.routes.security import get_authenticated_user
+from api.routes.security import require_auth
 from api.routes.rampart_keys import track_api_key_usage, get_api_key_template_pack
 
 router = APIRouter()
@@ -47,7 +49,7 @@ PII_CONFIDENCE_THRESHOLD = float(os.getenv("PII_CONFIDENCE_THRESHOLD", "0.7"))
 
 # Optional DB-backed defaults availability
 try:
-    from api.db import get_default
+    from api.db import get_default, content_filter_defaults_key
     _DB_OK = True
 except Exception:  # pragma: no cover
     _DB_OK = False
@@ -157,6 +159,11 @@ class ContentFilterRequest(BaseModel):
         le=1.0,
         description="Threshold above which content is considered toxic (applied to ML model score)"
     )
+
+    @field_validator("custom_pii_patterns")
+    @classmethod
+    def _check_custom_pii_patterns(cls, v: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
+        return validate_custom_patterns(v)
     use_presidio_pii: bool = Field(
         default=False,
         description="If true, use Presidio analyzer/anonymizer for PII instead of regex"
@@ -177,8 +184,8 @@ class ContentFilterResponse(BaseModel):
     processing_time_ms: float
 
 
-# In-memory storage
-filter_results: Dict[UUID, ContentFilterResponse] = {}
+# In-memory storage (bounded), stored as (owner_user_id, response)
+filter_results: "BoundedDict[UUID, Tuple[str, ContentFilterResponse]]" = BoundedDict(10_000)
 
 
 def detect_pii_regex(content: str, custom_patterns: Optional[Dict[str, str]] = None) -> List[PIIEntity]:
@@ -246,19 +253,16 @@ def detect_pii_regex(content: str, custom_patterns: Optional[Dict[str, str]] = N
     # Custom patterns (optional). Any name provided will be returned with that label and generic NAME type.
     if custom_patterns:
         for name, pattern in custom_patterns.items():
-            try:
-                for match in re.finditer(pattern, content):
-                    entities.append(PIIEntity(
-                        type=PIIType.NAME,  # keep generic type; use label for specificity
-                        value=match.group(),
-                        start=match.start(),
-                        end=match.end(),
-                        confidence=0.75,
-                        label=name
-                    ))
-            except re.error:
-                # Skip invalid regex silently; in real systems, collect metrics/logs
-                continue
+            # Untrusted pattern: run with a timeout so it cannot ReDoS the worker
+            for match in safe_finditer(pattern, content):
+                entities.append(PIIEntity(
+                    type=PIIType.NAME,  # keep generic type; use label for specificity
+                    value=match.group(),
+                    start=match.start(),
+                    end=match.end(),
+                    confidence=0.75,
+                    label=name
+                ))
 
     return entities
 
@@ -522,7 +526,7 @@ async def _execute_filter_core(
     custom_pii_patterns: Optional[Dict[str, str]],
     toxicity_threshold: float,
     use_presidio_pii: bool,
-    persist_result: bool = True,
+    owner_user_id: Optional[str] = None,
     record_prometheus: bool = True,
 ) -> ContentFilterResponse:
     """Shared ML pipeline for /filter and public /filter/demo."""
@@ -757,8 +761,8 @@ async def _execute_filter_core(
         processing_time_ms=round(processing_time, 2)
     )
 
-    if persist_result:
-        filter_results[result_id] = response
+    if owner_user_id:
+        filter_results[result_id] = (owner_user_id, response)
 
     return response
 
@@ -772,7 +776,7 @@ async def _execute_filter_core(
 async def filter_content(
     request: ContentFilterRequest,
     background_tasks: BackgroundTasks,
-    auth_data = Depends(get_authenticated_user)
+    auth_data = Depends(require_auth("filter:pii", "filter:toxicity"))
 ):
     """
     Comprehensive content analysis combining multiple security filters.
@@ -807,6 +811,13 @@ async def filter_content(
     ctx = (
         _tracer.start_as_current_span("content_filter") if _OTEL else nullcontext()
     )
+    max_len = get_settings().max_filter_content_chars
+    if len(request.content) > max_len:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Content exceeds maximum length ({max_len} characters)",
+        )
+
     with ctx as span:  # type: ignore
         # --- Resolve template pack (if the API key has one attached) ---
         pack_config = None
@@ -821,7 +832,7 @@ async def filter_content(
                     pack_config = None
 
         # --- Load org-level DB defaults ---
-        defaults = get_default("content_filter_defaults") if _DB_OK else None
+        defaults = get_default(content_filter_defaults_key(current_user.user_id)) if _DB_OK else None
 
         # --- Merge priority: explicit request > pack > DB defaults > system defaults ---
         # redact: None means "not set by caller" — use pack then DB then False
@@ -877,7 +888,7 @@ async def filter_content(
             custom_pii_patterns=custom_pii_patterns,
             toxicity_threshold=float(toxicity_threshold),
             use_presidio_pii=bool(use_presidio_pii),
-            persist_result=True,
+            owner_user_id=str(current_user.user_id),
             record_prometheus=True,
         )
 
@@ -924,7 +935,7 @@ async def filter_content_demo(request: ContentFilterRequest):
             custom_pii_patterns=request.custom_pii_patterns,
             toxicity_threshold=float(request.toxicity_threshold),
             use_presidio_pii=False,
-            persist_result=False,
+            owner_user_id=None,
             record_prometheus=False,
         )
 
@@ -967,10 +978,11 @@ async def get_filter_result(
     result_id: UUID,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Get a specific filter result"""
-    if result_id not in filter_results:
+    """Get a specific filter result (only if it belongs to the current user)"""
+    entry = filter_results.get(result_id)
+    if not entry or entry[0] != str(current_user.user_id):
         raise HTTPException(status_code=404, detail="Filter result not found")
-    return filter_results[result_id]
+    return entry[1]
 
 
 @router.get("/filter/stats")
@@ -979,20 +991,22 @@ async def get_filter_stats(current_user: TokenData = Depends(get_current_user)):
     from api.db import get_conn
     from sqlalchemy import text
     
-    # JWT trace data (in-memory)
-    jwt_filtered = len(filter_results)
+    # JWT trace data (in-memory, scoped to the current user)
+    uid = str(current_user.user_id)
+    user_results = [r for owner, r in list(filter_results.values()) if owner == uid]
+    jwt_filtered = len(user_results)
     
-    total_pii = sum(len(r.pii_detected) for r in filter_results.values())
-    unsafe_count = sum(1 for r in filter_results.values() if not r.is_safe)
+    total_pii = sum(len(r.pii_detected) for r in user_results)
+    unsafe_count = sum(1 for r in user_results if not r.is_safe)
     
     pii_type_counts = {}
-    for result in filter_results.values():
+    for result in user_results:
         for entity in result.pii_detected:
             pii_type = entity.type.value
             pii_type_counts[pii_type] = pii_type_counts.get(pii_type, 0) + 1
     
     avg_toxicity = 0.0
-    toxicity_results = [r for r in filter_results.values() if r.toxicity_scores]
+    toxicity_results = [r for r in user_results if r.toxicity_scores]
     if toxicity_results:
         avg_toxicity = sum(r.toxicity_scores.toxicity for r in toxicity_results) / len(toxicity_results)
     

@@ -5,6 +5,32 @@ All notable changes to Project Rampart will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **Dashboard session moved to an HttpOnly cookie** — the JWT is no longer placed in the OAuth redirect URL or `localStorage`, so XSS cannot exfiltrate it. The OAuth callback sets a `Secure`/`HttpOnly`/`SameSite` cookie; cookie-authenticated `POST/PUT/PATCH/DELETE` requests must carry `X-Requested-With: XMLHttpRequest` and an allowed `Origin` (CSRF guard). `Authorization: Bearer` (API keys, SDKs) is unchanged. New `POST /auth/logout` clears the cookie. New settings: `SESSION_COOKIE_NAME`, `SESSION_COOKIE_DOMAIN`, `SESSION_COOKIE_SAMESITE`, `FRONTEND_URL`.
+  - **Files**: `backend/api/routes/auth.py`, `backend/api/routes/security.py`, `backend/api/middleware/security.py`, `frontend/utils/auth.ts`, `frontend/utils/api.ts`, `frontend/lib/api.ts`, `frontend/contexts/AuthContext.tsx`, `frontend/app/auth/callback/page.tsx`, `frontend/app/settings/page.tsx`
+- **Provider API keys: single encryption scheme** — `/api-keys/keys` (used by the Settings UI) encrypted with Fernet using a zero-padded key, while the LLM proxy decrypted with AES-GCM/PBKDF2 via `providers.py`. Decryption failed silently and the proxy fell back to the operator's `OPENAI_API_KEY`, billing users' traffic to the platform key. Both routes now use `api.security.crypto`; an undecryptable stored key raises `ProviderKeyDecryptionError` and fails the request instead of falling back.
+  - **Migration**: provider keys saved through the Settings UI before this release cannot be decrypted (they never could be by the proxy). Users must re-enter them.
+  - **Files**: `backend/api/routes/api_keys.py`, `backend/api/routes/providers.py`, `backend/integrations/llm_proxy.py`
+- **`KEY_ENCRYPTION_SECRET` is now validated** (>=32 chars; no placeholder in production) like `JWT_SECRET_KEY`; optional `KEY_ENCRYPTION_SALT` for a per-deployment PBKDF2 salt. `DEBUG=true` is refused when `ENVIRONMENT=production`.
+- **Hugging Face models pinned to commit SHAs** (`backend/models/pinned_revisions.py`) so a compromised or force-pushed Hub repo cannot change what the workers execute. `Dockerfile.base` pre-downloads exactly those revisions and now sets `HF_HOME` so the non-root runtime user actually hits the cache.
+- **Public `/filter/demo` disabled by default** (`ENABLE_PUBLIC_FILTER_DEMO=false`); it exposed ML inference to anonymous callers.
+- **`docker-compose.yml` no longer ships fallback secrets** — `POSTGRES_PASSWORD`, `SECRET_KEY`, `JWT_SECRET_KEY`, `KEY_ENCRYPTION_SECRET` are required (`${VAR:?}`), and `DEBUG` defaults to `false`.
+- **Dependency CVEs** — `fastapi>=0.135` (starlette 1.7: CVE-2026-48710, -54282, -54283, -48817, -48818), `transformers>=5.10,<5.17` (CVE-2026-4372, -9856, -1839, -80047, CVE-2025-14929), `python-dotenv>=1.2.2` (CVE-2026-28684), `pytest>=9.0.3`, `pydantic>=2.10`; frontend `next@16` (request smuggling/DoS), `axios@1.20` (SSRF/auth bypass), `vitest@4`, `lucide-react@0.577`, `eslint@9`.
+  - `optimum[onnxruntime]` removed: `optimum-onnx` pins `transformers<4.58`. DeBERTa and toxic-bert now use the PyTorch path (automatic fallback already in code; GLiNER PII is unaffected and still ONNX). Re-add once optimum-onnx supports transformers 5.x.
+
+### Fixed
+
+- **GLiNER ONNX never loaded** — the repos ship `onnx/model.onnx`, not `model.onnx`; the loader always fell back to PyTorch. Now loads the fp32 ONNX graph (matches PyTorch scores; quint8 drops confidences below the 0.7 threshold).
+- `api_keys.py` bound raw `UUID` objects in SQL (fails on SQLite).
+- OAuth token exchange with Google now has a 10s timeout.
+
+### Changed
+
+- **Next.js 14 → 16, React 18 → 19** — Turbopack build (custom webpack config removed), async `searchParams` in `app/docs/page.tsx`, ESLint 9 flat config (`eslint.config.mjs`), Node >= 20.9 (`Dockerfile` on `node:22-alpine`).
+
 ## [0.2.6] - 2026-04-11
 
 ### Added

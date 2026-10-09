@@ -24,11 +24,16 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 _MODEL_NAME = "unitary/toxic-bert"
+
+
+def _revision():
+    from models.pinned_revisions import revision_for
+    return revision_for(_MODEL_NAME)
 _TOXIC_LABEL = "toxic"
 _ALL_LABELS = {"toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"}
 
@@ -37,6 +42,7 @@ try:
     from optimum.onnxruntime import ORTModelForSequenceClassification  # type: ignore
     _ORT_AVAILABLE = True
 except ImportError:
+    ORTModelForSequenceClassification = None  # type: ignore[assignment,misc]
     _ORT_AVAILABLE = False
     logger.info("optimum[onnxruntime] not available — toxicity will use PyTorch pipeline")
 
@@ -51,7 +57,7 @@ def _get_pipeline():
     hub cache directory so subsequent container starts skip the export step.
     """
     # ── ONNX path ──────────────────────────────────────────────────────────
-    if _ORT_AVAILABLE:
+    if _ORT_AVAILABLE and ORTModelForSequenceClassification is not None:
         try:
             from transformers import AutoTokenizer, pipeline as hf_pipeline  # type: ignore
 
@@ -61,6 +67,7 @@ def _get_pipeline():
                 ort_model = ORTModelForSequenceClassification.from_pretrained(
                     _MODEL_NAME,
                     export=False,
+                    revision=_revision(),
                 )
                 logger.info("✓ toxic-bert ONNX loaded from cache")
             except Exception:
@@ -69,10 +76,11 @@ def _get_pipeline():
                 ort_model = ORTModelForSequenceClassification.from_pretrained(
                     _MODEL_NAME,
                     export=True,
+                    revision=_revision(),
                 )
                 logger.info("✓ toxic-bert ONNX exported and cached")
 
-            tokenizer = AutoTokenizer.from_pretrained(_MODEL_NAME)
+            tokenizer = AutoTokenizer.from_pretrained(_MODEL_NAME, revision=_revision())
             pipe = hf_pipeline(
                 "text-classification",
                 model=ort_model,
@@ -93,6 +101,7 @@ def _get_pipeline():
             "text-classification",
             model=_MODEL_NAME,
             tokenizer=_MODEL_NAME,
+            revision=_revision(),
             top_k=None,
         )
         logger.info(f"✓ Toxicity model loaded (PyTorch): {_MODEL_NAME}")
@@ -117,7 +126,13 @@ def detect_toxicity(content: str) -> Optional[dict]:
     if pipe is None:
         return None
     try:
-        all_scores = pipe(content[:512])[0]  # outer list wraps one item per input text
+        raw: Any = pipe(content[:512])
+        # With top_k=None the pipeline returns one dict per label. For a single string
+        # input that is a flat list; some versions/batched calls wrap it per input text.
+        # Normalise to a flat list of {"label", "score"} dicts.
+        all_scores: list[dict[str, Any]] = (
+            raw[0] if raw and isinstance(raw[0], list) else raw
+        )
         scores_by_label = {item["label"]: item["score"] for item in all_scores}
         toxicity_score = float(scores_by_label.get(_TOXIC_LABEL, 0.0))
         is_toxic = toxicity_score > 0.5

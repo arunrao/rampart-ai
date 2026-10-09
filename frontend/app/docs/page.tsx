@@ -14,11 +14,12 @@ const TAB_REDIRECTS: Record<string, string> = {
 };
 
 type DocsIndexProps = {
-  searchParams: Record<string, string | string[] | undefined>;
+  // Next 15+: request-time props are async
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default function DocsIndexPage({ searchParams }: DocsIndexProps) {
-  const raw = searchParams.tab;
+export default async function DocsIndexPage({ searchParams }: DocsIndexProps) {
+  const raw = (await searchParams).tab;
   const tab = typeof raw === "string" ? raw : undefined;
   if (tab && TAB_REDIRECTS[tab]) {
     redirect(TAB_REDIRECTS[tab]);

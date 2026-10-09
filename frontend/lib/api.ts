@@ -1,40 +1,25 @@
 import axios from 'axios';
+import { API_URL, CSRF_HEADER, CSRF_HEADER_VALUE } from '@/utils/auth';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-
+// The dashboard session is an HttpOnly cookie set by the backend's OAuth callback.
+// `withCredentials` sends it; the X-Requested-With header satisfies the backend's CSRF
+// check on state-changing requests. No token is ever held in JavaScript.
 export const api = axios.create({
   baseURL: API_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
+    [CSRF_HEADER]: CSRF_HEADER_VALUE,
   },
 });
-
-// Add request interceptor to include auth token from localStorage
-api.interceptors.request.use(
-  (config) => {
-    // Only add token if we're in the browser (not SSR)
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
 
 // Add response interceptor to handle 401 errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid, clear auth and redirect to login
+      // Session expired or invalid: send the user back to login
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('user_email');
         window.location.href = '/login';
       }
     }
@@ -193,6 +178,48 @@ export const contentFilterApi = {
   },
   getFilterStats: async () => {
     const response = await api.get('/filter/stats');
+    return response.data;
+  },
+};
+
+// Super-admin API (requires caller's email in SUPER_ADMIN_EMAILS)
+export type AdminRange = '24h' | '7d' | '30d' | '90d';
+
+export const adminApi = {
+  getStats: async (range: AdminRange) => {
+    const response = await api.get('/admin/stats', { params: { range } });
+    return response.data;
+  },
+  getTimeseries: async (range: AdminRange) => {
+    const response = await api.get('/admin/timeseries', { params: { range } });
+    return response.data;
+  },
+  getCostByUser: async (range: AdminRange, limit = 25) => {
+    const response = await api.get('/admin/cost/by-user', { params: { range, limit } });
+    return response.data;
+  },
+  getCostByEndpoint: async (range: AdminRange) => {
+    const response = await api.get('/admin/cost/by-endpoint', { params: { range } });
+    return response.data;
+  },
+  getAuditLogs: async (params?: {
+    limit?: number;
+    offset?: number;
+    endpoint?: string;
+    user_id?: string;
+    event_type?: string;
+    errors_only?: boolean;
+  }) => {
+    const response = await api.get('/admin/audit-logs', { params });
+    return response.data;
+  },
+  getUsers: async (params?: {
+    limit?: number;
+    offset?: number;
+    search?: string;
+    sort?: 'created_at' | 'cost_usd' | 'requests' | 'last_seen';
+  }) => {
+    const response = await api.get('/admin/users', { params });
     return response.data;
   },
 };

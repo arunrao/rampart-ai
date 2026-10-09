@@ -27,9 +27,9 @@ def test_hash_and_verify_password_roundtrip():
 
 @pytest.mark.unit
 def test_create_and_decode_access_token():
-    uid = uuid.uuid4()
-    email = "jwt-test@example.com"
-    token = create_access_token(uid, email)
+    from tests.helpers import create_user_and_jwt
+
+    email, uid, token = create_user_and_jwt()
     data = decode_access_token(token)
     assert data.user_id == uid
     assert data.email == email
@@ -83,7 +83,75 @@ def test_auth_me_requires_valid_jwt(client: TestClient, jwt_token: str):
 @pytest.mark.security
 def test_auth_me_rejects_missing_header(client: TestClient):
     r = client.get("/api/v1/auth/me")
+    assert r.status_code == 401
+
+
+# --- HttpOnly session cookie -------------------------------------------------------
+
+def _cookie_name() -> str:
+    return get_settings().session_cookie_name
+
+
+@pytest.mark.security
+def test_session_cookie_authenticates_get(client: TestClient, jwt_token: str):
+    client.cookies.set(_cookie_name(), jwt_token)
+    r = client.get("/api/v1/auth/me")
+    assert r.status_code == 200
+    assert "email" in r.json()
+
+
+@pytest.mark.security
+def test_session_cookie_unsafe_method_requires_csrf_header(client: TestClient, jwt_token: str):
+    client.cookies.set(_cookie_name(), jwt_token)
+    r = client.post("/api/v1/auth/refresh")
     assert r.status_code == 403
+    assert "X-Requested-With" in r.json()["detail"]
+
+
+@pytest.mark.security
+def test_session_cookie_unsafe_method_rejects_foreign_origin(client: TestClient, jwt_token: str):
+    client.cookies.set(_cookie_name(), jwt_token)
+    r = client.post(
+        "/api/v1/auth/refresh",
+        headers={"X-Requested-With": "XMLHttpRequest", "Origin": "https://evil.example"},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.security
+def test_session_cookie_unsafe_method_allowed_with_csrf_header(client: TestClient, jwt_token: str):
+    client.cookies.set(_cookie_name(), jwt_token)
+    r = client.post(
+        "/api/v1/auth/refresh",
+        headers={"X-Requested-With": "XMLHttpRequest", "Origin": "http://localhost:3000"},
+    )
+    assert r.status_code == 200
+    set_cookie = r.headers.get("set-cookie", "")
+    assert _cookie_name() in set_cookie
+    assert "httponly" in set_cookie.lower()
+
+
+@pytest.mark.security
+def test_bearer_header_does_not_require_csrf_header(client: TestClient, jwt_token: str):
+    r = client.post("/api/v1/auth/refresh", headers={"Authorization": f"Bearer {jwt_token}"})
+    assert r.status_code == 200
+
+
+@pytest.mark.security
+def test_logout_clears_cookie(client: TestClient, jwt_token: str):
+    client.cookies.set(_cookie_name(), jwt_token)
+    r = client.post("/api/v1/auth/logout", headers={"X-Requested-With": "XMLHttpRequest"})
+    assert r.status_code == 204
+    set_cookie = r.headers.get("set-cookie", "")
+    assert _cookie_name() in set_cookie
+    assert 'max-age=0' in set_cookie.lower() or "expires=" in set_cookie.lower()
+
+
+@pytest.mark.security
+def test_invalid_session_cookie_rejected(client: TestClient):
+    client.cookies.set(_cookie_name(), "not.a.jwt")
+    r = client.get("/api/v1/auth/me")
+    assert r.status_code == 401
 
 
 @pytest.mark.security

@@ -57,8 +57,11 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 @pytest.fixture
 def client():
     from fastapi.testclient import TestClient
+    import api.main as main
     from api.main import app
 
+    # Skip the maintenance-mode 503 gate (ML warmup never runs under TestClient)
+    main._models_ready = True
     return TestClient(app)
 
 

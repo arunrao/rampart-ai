@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
 // Force dynamic rendering for this page
@@ -9,37 +9,26 @@ export const dynamic = 'force-dynamic';
 
 function AuthCallbackContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { refreshUser } = useAuth();
+  const handled = useRef(false);
 
   useEffect(() => {
-    const token = searchParams.get("token");
-    
-    if (token) {
-      // Verify token and get user info
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+    // Run once (React strict mode double-invokes effects in dev)
+    if (handled.current) return;
+    handled.current = true;
+
+    // The backend already set the HttpOnly session cookie before redirecting here, so
+    // nothing sensitive is in the URL. Just confirm the session and move on.
+    refreshUser()
+      .then((user) => {
+        if (!user) throw new Error("No session");
+        router.push("/");
       })
-        .then((res) => {
-          if (!res.ok) throw new Error("Invalid token");
-          return res.json();
-        })
-        .then((user) => {
-          // Login with the token
-          login(token, user);
-          // Redirect to home
-          router.push("/");
-        })
-        .catch((error) => {
-          console.error("Auth callback error:", error);
-          router.push("/login?error=auth_failed");
-        });
-    } else {
-      router.push("/login?error=no_token");
-    }
-  }, [searchParams, login, router]);
+      .catch((error) => {
+        console.error("Auth callback error:", error);
+        router.push("/login?error=auth_failed");
+      });
+  }, [refreshUser, router]);
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center">

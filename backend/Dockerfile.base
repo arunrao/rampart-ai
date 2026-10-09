@@ -23,21 +23,18 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
     && apt-get purge -y gcc \
     && apt-get autoremove -y
 
-# Create model cache directory
+# Model cache lives under /app so the non-root runtime user (Dockerfile.app) can read it
+ENV HF_HOME=/app/.cache/huggingface
 RUN mkdir -p /app/.cache/huggingface
 
-# Pre-download ALL models during base image build
-# DeBERTa model (~300MB)
-RUN python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
-    model_name = 'protectai/deberta-v3-base-prompt-injection-v2'; \
-    AutoTokenizer.from_pretrained(model_name); \
-    AutoModelForSequenceClassification.from_pretrained(model_name); \
-    print('✓ DeBERTa model pre-downloaded')"
-
-# GLiNER model (~200MB) - ENABLED for base image
+# Pre-download ALL models during base image build, pinned to the reviewed commit SHAs in
+# models/pinned_revisions.py so the image is reproducible and a Hub-side change cannot
+# alter what ships. Runtime loads resolve to these cached snapshots.
+COPY models/pinned_revisions.py models/pinned_revisions.py
 RUN python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('urchade/gliner_multi-v2.1', cache_dir='/app/.cache/huggingface'); \
-    print('✓ GLiNER model pre-downloaded')" || echo "⚠ GLiNER will download on first use"
+    from models.pinned_revisions import PINNED_REVISIONS; \
+    [snapshot_download(name, revision=rev) for name, rev in PINNED_REVISIONS.items()]; \
+    print('✓ Pre-downloaded', len(PINNED_REVISIONS), 'pinned models')"
 
 # This base image is now ~2.5GB with all models
 # Tag and push: docker tag rampart-backend-base:latest <ECR>/rampart-backend-base:latest
