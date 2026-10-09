@@ -39,6 +39,8 @@ Parameters:
       - t3.small
       - t3.medium
       - t3.large
+      - c5.xlarge   # production: 8 GB RAM for 2 uvicorn workers x ~1 GB ML models
+      - c5.2xlarge
     Description: EC2 instance type for simple deployment
 
   KeyPairName:
@@ -521,6 +523,8 @@ Resources:
                   - CORS_ORIGINS=https://${DomainName}
                   - ENVIRONMENT=production
                   - TRUSTED_PROXY_COUNT=1
+                  # Marketing "Try it" playground (/try -> POST /filter/demo, unauthenticated)
+                  - ENABLE_PUBLIC_FILTER_DEMO=true
                   - SECRET_KEY=${!JWT_KEY}
                   - KEY_ENCRYPTION_SECRET=${!JWT_KEY}
                 ports:
