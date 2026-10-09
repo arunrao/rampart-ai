@@ -2,9 +2,9 @@
 Configuration management for Project Rampart
 """
 from pydantic_settings import BaseSettings
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 
 
 MIN_JWT_SECRET_LENGTH = 32
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # (e.g. ".example.com"); leave empty when they share a host or for localhost.
     session_cookie_name: str = "rampart_session"
     session_cookie_domain: str = ""
-    session_cookie_samesite: str = "lax"  # lax | strict | none ("none" requires HTTPS)
+    session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"  # "none" requires HTTPS
     
     # Content Filtering
     max_token_limit: int = 4096
@@ -132,9 +132,13 @@ class Settings(BaseSettings):
                     raise ValueError(f"{name} is still a placeholder value; set a real secret in production")
             if self.debug:
                 raise ValueError("DEBUG must be false in production (it echoes exception text to clients)")
-        if self.session_cookie_samesite.lower() not in ("lax", "strict", "none"):
-            raise ValueError("SESSION_COOKIE_SAMESITE must be one of: lax, strict, none")
         return self
+
+    @field_validator("session_cookie_samesite", mode="before")
+    @classmethod
+    def _normalize_samesite(cls, v):
+        # Accept "Lax" / "NONE" etc. from env vars; the Literal type then enforces the allowed set
+        return v.strip().lower() if isinstance(v, str) else v
 
 
 @lru_cache()

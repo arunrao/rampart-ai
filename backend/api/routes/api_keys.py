@@ -129,10 +129,10 @@ async def create_api_key(
                     "provider": request.provider.value
                 }
             )
-            key_id = existing[0]
+            key_id = UUID(str(existing[0]))
         else:
             # Create new key
-            key_id = str(uuid4())
+            key_id = uuid4()
             conn.execute(
                 text("""
                     INSERT INTO provider_keys 
@@ -140,7 +140,7 @@ async def create_api_key(
                     VALUES (:id, :user_id, :provider, :key_encrypted, :last_4, 'active', :created_at, :updated_at)
                 """),
                 {
-                    "id": key_id,
+                    "id": str(key_id),
                     "user_id": user_id,
                     "provider": request.provider.value,
                     "key_encrypted": encrypted_key,

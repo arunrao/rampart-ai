@@ -49,7 +49,7 @@ def set_session_cookie(response: Response, token: str) -> None:
         max_age=settings.access_token_expire_minutes * 60,
         httponly=True,
         secure=_cookie_secure(),
-        samesite=settings.session_cookie_samesite.lower(),
+        samesite=settings.session_cookie_samesite,
         domain=settings.session_cookie_domain or None,
         path="/",
     )
