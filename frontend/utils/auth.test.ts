@@ -1,54 +1,47 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
-import {
-  getAuthToken,
-  setAuthToken,
-  removeAuthToken,
-  isAuthenticated,
-} from "./auth";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import { CSRF_HEADER, CSRF_HEADER_VALUE, fetchWithAuth, logoutSession, withSession } from "./auth";
 
-function mockLocalStorage() {
-  const store: Record<string, string> = {};
-  const ls = {
-    getItem: (k: string) => (k in store ? store[k] : null),
-    setItem: (k: string, v: string) => {
-      store[k] = String(v);
-    },
-    removeItem: (k: string) => {
-      delete store[k];
-    },
-    clear: () => {
-      for (const k of Object.keys(store)) delete store[k];
-    },
-    key: (i: number) => Object.keys(store)[i] ?? null,
-    get length() {
-      return Object.keys(store).length;
-    },
-  };
-  vi.stubGlobal("localStorage", ls as Storage);
-  return store;
-}
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-describe("auth token storage", () => {
-  beforeEach(() => {
-    mockLocalStorage();
+describe("cookie session helpers", () => {
+  it("withSession sends cookies and the CSRF header", () => {
+    const init = withSession({ method: "POST", headers: { "Content-Type": "application/json" } });
+    expect(init.credentials).toBe("include");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({
+      [CSRF_HEADER]: CSRF_HEADER_VALUE,
+      "Content-Type": "application/json",
+    });
   });
 
-  it("returns null when no token", () => {
-    expect(getAuthToken()).toBeNull();
-    expect(isAuthenticated()).toBe(false);
+  it("withSession accepts a Headers instance", () => {
+    const init = withSession({ headers: new Headers({ Accept: "text/plain" }) });
+    expect(init.headers).toMatchObject({ accept: "text/plain", [CSRF_HEADER]: CSRF_HEADER_VALUE });
   });
 
-  it("sets and reads token", () => {
-    setAuthToken("test-jwt");
-    expect(getAuthToken()).toBe("test-jwt");
-    expect(isAuthenticated()).toBe(true);
+  it("never attaches a bearer token from storage", () => {
+    const init = withSession({});
+    const keys = Object.keys(init.headers as Record<string, string>).map((k) => k.toLowerCase());
+    expect(keys).not.toContain("authorization");
   });
 
-  it("removeAuthToken clears storage", () => {
-    setAuthToken("x");
-    localStorage.setItem("user_email", "a@b.com");
-    removeAuthToken();
-    expect(getAuthToken()).toBeNull();
-    expect(localStorage.getItem("user_email")).toBeNull();
+  it("fetchWithAuth forwards the session init to fetch", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", spy);
+    await fetchWithAuth("http://api.test/x", { method: "DELETE" });
+    expect(spy).toHaveBeenCalledWith(
+      "http://api.test/x",
+      expect.objectContaining({ method: "DELETE", credentials: "include" })
+    );
+  });
+
+  it("logoutSession posts to /auth/logout and swallows network errors", async () => {
+    const spy = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", spy);
+    await expect(logoutSession()).resolves.toBeUndefined();
+    expect(spy.mock.calls[0][0]).toMatch(/\/auth\/logout$/);
+    expect(spy.mock.calls[0][1]).toMatchObject({ method: "POST", credentials: "include" });
   });
 });

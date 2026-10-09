@@ -1,8 +1,8 @@
 # Core Framework
-fastapi>=0.115.6
+fastapi>=0.135.0                 # pulls starlette>=1.3.1 (CVE-2026-48710/54282/54283/48817/48818)
 uvicorn[standard]==0.27.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
+pydantic>=2.10,<3
+pydantic-settings>=2.6,<3
 email-validator>=2.2.0
 
 # Database & Storage
@@ -18,16 +18,18 @@ cryptography>=44.0.1
 authlib>=1.3.1
 
 # Utilities
-python-dotenv==1.0.0
+python-dotenv>=1.2.2             # CVE-2026-28684
 python-multipart>=0.0.18
 httpx==0.26.0
 
 # ML Models for Security
-gliner>=0.2.0                    # GLiNER for PII detection
+gliner>=0.2.29                   # GLiNER for PII detection (transformers 5.x support)
+regex>=2023.8.8                  # Timeout-capable regex engine for user-supplied patterns (ReDoS guard)
 onnxruntime>=1.16.0              # ONNX runtime for optimized inference
-transformers>=4.35.0             # Hugging Face transformers (for DeBERTa)
+transformers>=5.10.0,<5.17       # <5.10 has RCE/path-traversal CVEs; upper bound from gliner 0.2.29
 # torch>=2.0.0                   # Installed separately via CPU-only index in Dockerfile (saves 3GB)
-optimum[onnxruntime]>=1.16.0     # ONNX optimization for transformers
+# optimum[onnxruntime]           # Disabled: optimum-onnx 0.1.0 pins transformers<4.58. DeBERTa/toxicity use the
+#                                # PyTorch path (automatic fallback) until optimum-onnx supports transformers 5.x.
 sentencepiece>=0.1.99            # Tokenizer for DeBERTa
 accelerate>=0.20.0               # Required for transformers model loading
 
@@ -39,5 +41,5 @@ accelerate>=0.20.0               # Required for transformers model loading
 prometheus-client==0.19.0
 
 # Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
+pytest>=9.0.3                    # CVE-2025-71176
+pytest-asyncio>=0.24.0

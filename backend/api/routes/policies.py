@@ -2,7 +2,7 @@
 Policy management endpoints - compliance templates, rule evaluation, template packs
 """
 from fastapi import APIRouter, HTTPException, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime, date
@@ -13,6 +13,7 @@ import re
 import logging
 
 from api.routes.auth import get_current_user, TokenData
+from api.security.safe_regex import validate_custom_patterns
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ detect_pii_gliner: Any = None
 
 # Optional DB availability
 try:
-    from api.db import get_default, set_default, get_conn, insert_audit_log, DATABASE_URL
+    from api.db import get_default, set_default, get_conn, insert_audit_log, DATABASE_URL, content_filter_defaults_key
     from sqlalchemy import text
     _DB_AVAILABLE = True
 except Exception:  # pragma: no cover
@@ -68,13 +69,18 @@ class ContentFilterDefaults(BaseModel):
     enable_self_harm: Optional[bool] = None
     enable_hate: Optional[bool] = None
 
+    @field_validator("custom_pii_patterns")
+    @classmethod
+    def _check_custom_pii_patterns(cls, v: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
+        return validate_custom_patterns(v)
+
 
 @router.get("/policies/defaults/content-filter", response_model=ContentFilterDefaults)
 async def get_content_filter_defaults(current_user: TokenData = Depends(get_current_user)):
     """Get default settings for content filter enforcement"""
     if not _DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="Defaults store unavailable")
-    data = get_default("content_filter_defaults") or {}
+    data = get_default(content_filter_defaults_key(current_user.user_id)) or {}
     return ContentFilterDefaults(**data)
 
 
@@ -86,9 +92,10 @@ async def set_content_filter_defaults(
     """Set default settings for content filter enforcement"""
     if not _DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="Defaults store unavailable")
-    current = get_default("content_filter_defaults") or {}
+    key = content_filter_defaults_key(current_user.user_id)
+    current = get_default(key) or {}
     updated = {**current, **{k: v for k, v in payload.dict().items() if v is not None}}
-    set_default("content_filter_defaults", updated)
+    set_default(key, updated)
     _emit_audit_log(current_user, "/policies/defaults/content-filter", "PUT", "config_change")
     return ContentFilterDefaults(**updated)
 

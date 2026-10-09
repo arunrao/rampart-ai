@@ -24,7 +24,7 @@ def test_redaction_uses_label_for_custom_pattern(client: TestClient, auth_header
 def test_defaults_merge_applies_when_request_omits(monkeypatch, client: TestClient, auth_headers: dict):
     # Defaults say redact=True; request omits redact
     def fake_get_default(key: str):
-        if key == "content_filter_defaults":
+        if key.startswith("content_filter_defaults:"):
             return {"redact": True}
         return None
 

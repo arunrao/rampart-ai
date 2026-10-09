@@ -1,0 +1,28 @@
+# Local Python environments and caches — never ship these in the image
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets and local state
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+tests/.pytest_rampart.sqlite
+
+# Tests, tooling, docs
+tests/
+*.md
+Dockerfile*
+.dockerignore
+.git/
+.gitignore
+.DS_Store
+*.log

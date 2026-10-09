@@ -21,34 +21,25 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 # Copy application code
 COPY . .
 
-# Create model cache directory
+# Model cache lives under /app so the non-root runtime user below can read it.
+# (Without HF_HOME the downloads landed in /root/.cache and were never hit at runtime.)
+ENV HF_HOME=/app/.cache/huggingface
 RUN mkdir -p /app/.cache/huggingface
 
-# Pre-download GLiNER edge model (ONNX UINT8, ~197MB) so there is no cold-start
-# download on first request.  The knowledgator edge model is PII-specialized and
-# ships a quantized ONNX file — faster and smaller than the old gravitee default.
-RUN python -c "\
-from models.pii_detector_gliner import GLiNERPIIDetector; \
-d = GLiNERPIIDetector(model_type='edge', use_onnx=True); \
-_ = d.model; \
-print('✓ GLiNER edge model (ONNX) pre-downloaded')" \
-  || echo "⚠ GLiNER pre-download skipped (will download on first use)"
-
-# Toxicity model (unitary/toxic-bert, ~440MB safetensors only)
-# ignore_patterns excludes the legacy pytorch_model.bin (duplicate of safetensors),
-# cutting ~440MB from the image without affecting runtime.
+# Pre-download the models at the commit SHAs pinned in models/pinned_revisions.py so there
+# is no cold-start download and a Hub-side change cannot alter what the image executes.
+# GLiNER edge: full snapshot (GLiNER.from_pretrained snapshots the whole repo, so any
+# excluded file forces a network fetch at runtime); toxic-bert / DeBERTa: safetensors
+# only (the .bin duplicates add ~740MB for nothing).
 RUN python -c "\
 from huggingface_hub import snapshot_download; \
-snapshot_download('unitary/toxic-bert', ignore_patterns=['*.bin', 'flax_model*', 'tf_model*', 'rust_model*']); \
-print('✓ Toxicity model (unitary/toxic-bert) pre-downloaded')" \
-  || echo "⚠ Toxicity pre-download skipped (will download on first use)"
-
-# DeBERTa model (~300MB safetensors only)
-# ignore_patterns excludes pytorch_model.bin duplicate, saving ~300MB.
-RUN python -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download('protectai/deberta-v3-base-prompt-injection-v2', ignore_patterns=['*.bin', 'flax_model*', 'tf_model*', 'rust_model*']); \
-print('✓ DeBERTa model pre-downloaded')" || echo "⚠ DeBERTa pre-download skipped (will download on first use)"
+from models.pinned_revisions import PINNED_REVISIONS as P; \
+skip = ['*.bin', 'flax_model*', 'tf_model*', 'rust_model*']; \
+snapshot_download('knowledgator/gliner-pii-edge-v1.0', revision=P['knowledgator/gliner-pii-edge-v1.0']); \
+snapshot_download('unitary/toxic-bert', revision=P['unitary/toxic-bert'], ignore_patterns=skip); \
+snapshot_download('protectai/deberta-v3-base-prompt-injection-v2', revision=P['protectai/deberta-v3-base-prompt-injection-v2'], ignore_patterns=skip); \
+print('✓ Pinned models pre-downloaded')" \
+  || echo "⚠ Model pre-download skipped (will download on first use)"
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash app \

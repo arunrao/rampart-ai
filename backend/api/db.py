@@ -94,7 +94,12 @@ def init_defaults_table() -> None:
         conn.commit()
 
 
-@lru_cache(maxsize=32)  # Cache policy defaults (rarely change)
+def content_filter_defaults_key(user_id: Any) -> str:
+    """Per-user key for content-filter defaults (never shared across tenants)."""
+    return f"content_filter_defaults:{user_id}"
+
+
+@lru_cache(maxsize=256)  # Cache policy defaults (rarely change); cleared in set_default
 def get_default(key: str) -> Optional[Dict[str, Any]]:
     with get_conn() as conn:
         res = conn.execute(
@@ -144,6 +149,7 @@ def set_default(key: str, value: Dict[str, Any]) -> None:
                 {"k": key, "v": json.dumps(value), "u": datetime.utcnow()},
             )
         conn.commit()
+    get_default.cache_clear()
 
 
 def init_users_table() -> None:
@@ -293,6 +299,11 @@ def init_rampart_api_keys_table() -> None:
                     "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_active ON rampart_api_keys(is_active)"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_preview ON rampart_api_keys(key_preview)"
+                )
+            )
         else:
             conn.execute(
                 text(
@@ -330,6 +341,11 @@ def init_rampart_api_keys_table() -> None:
             conn.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_active ON rampart_api_keys(is_active)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_rampart_api_keys_preview ON rampart_api_keys(key_preview)"
                 )
             )
         conn.commit()

@@ -252,13 +252,16 @@ class LLMProxy:
         """
         api_key = None
         
-        # Try to get user's API key first
+        # Try to get user's API key first. A key that exists but cannot be decrypted
+        # must fail the request rather than silently falling back to the system key.
         if user_id:
+            from api.routes.providers import get_user_provider_key, ProviderKeyDecryptionError
             try:
-                from api.routes.providers import get_user_provider_key
                 api_key = get_user_provider_key(user_id, self.provider)
+            except ProviderKeyDecryptionError as e:
+                raise ValueError(str(e)) from e
             except Exception:
-                pass
+                logger.warning("Provider key lookup failed for user %s", user_id, exc_info=True)
         
         # Fall back to system env key if user doesn't have one
         if not api_key:

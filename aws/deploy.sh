@@ -143,6 +143,12 @@ docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/rampart-frontend:l
 echo ""
 echo -e "${YELLOW}Step 5: Deploying CloudFormation Stack${NC}"
 
+# SSH is restricted to one CIDR; default to this machine's current public IP
+if [ -z "$SSH_ALLOWED_CIDR" ]; then
+  SSH_ALLOWED_CIDR="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')/32"
+  echo "  SSH_ALLOWED_CIDR not set; allowing SSH only from this machine: $SSH_ALLOWED_CIDR"
+fi
+
 # Create parameters file
 cat > /tmp/cfn-parameters.json << EOF
 [
@@ -169,6 +175,10 @@ cat > /tmp/cfn-parameters.json << EOF
   {
     "ParameterKey": "DomainName",
     "ParameterValue": "$DOMAIN_NAME"
+  },
+  {
+    "ParameterKey": "SSHAllowedCidr",
+    "ParameterValue": "$SSH_ALLOWED_CIDR"
   }
 ]
 EOF

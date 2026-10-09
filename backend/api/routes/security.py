@@ -7,7 +7,7 @@ Features:
 - Jailbreak attempt detection
 - Real-time threat analysis
 """
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -17,7 +17,7 @@ import os
 import logging
 import threading
 
-from api.routes.auth import get_current_user, TokenData
+from api.routes.auth import get_current_user, TokenData, extract_token
 from api.routes.rampart_keys import get_current_user_from_api_key, track_api_key_usage
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models.prompt_injection_detector import (
@@ -25,9 +25,10 @@ from models.prompt_injection_detector import (
     get_prompt_injection_detector,
 )
 from security.data_exfiltration_monitor import DataExfiltrationMonitor
+from api.memstore import BoundedDict
 
 router = APIRouter()
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 
 # Initialize hybrid detector (lazy loaded)
@@ -62,22 +63,37 @@ def get_exfiltration_monitor():
 
 
 # Dual authentication dependency - supports both JWT and API key
-async def get_authenticated_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> tuple[TokenData, Optional[UUID]]:
+def require_auth(*api_key_permissions: str):
     """
-    Authenticate user via either JWT token (dashboard) or API key (application).
-    Returns (user_data, api_key_id) - api_key_id is None for JWT auth.
+    Build a dependency authenticating via either JWT token (dashboard) or API key (application).
+    API keys must hold at least one of ``api_key_permissions``; JWT (dashboard) users have full access.
+    The dependency returns (user_data, api_key_id) - api_key_id is None for JWT auth.
     """
-    token = credentials.credentials
-    
-    # Try API key authentication first (starts with 'rmp_')
-    if token.startswith('rmp_'):
-        user_data, api_key_id = await get_current_user_from_api_key(token)
+    async def _authenticate(
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    ) -> tuple[TokenData, Optional[UUID]]:
+        # Bearer header (API key or JWT) or the dashboard's HttpOnly session cookie (JWT)
+        token, from_cookie = extract_token(request, credentials)
+
+        # Try API key authentication first (starts with 'rmp_')
+        if token.startswith('rmp_') and not from_cookie:
+            user_data, api_key_id = await get_current_user_from_api_key(
+                token, required_any=api_key_permissions
+            )
+        else:
+            # Fall back to JWT authentication
+            from api.routes.auth import decode_access_token
+            user_data, api_key_id = decode_access_token(token), None
+
+        # Picked up by AuditLogMiddleware so audit rows carry the acting user
+        request.state.user_id = str(user_data.user_id)
         return user_data, api_key_id
-    
-    # Fall back to JWT authentication
-    from api.routes.auth import decode_access_token
-    user_data = decode_access_token(token)
-    return user_data, None
+
+    return _authenticate
+
+
+get_authenticated_user = require_auth()
 
 
 class ThreatType(str, Enum):
@@ -141,9 +157,22 @@ class SecurityIncident(BaseModel):
     metadata: Optional[Dict[str, Any]]
 
 
-# In-memory storage
-security_analyses: Dict[UUID, SecurityAnalysisResponse] = {}
-security_incidents: Dict[UUID, SecurityIncident] = {}
+# In-memory storage (bounded). Analyses are stored as (owner_user_id, response).
+security_analyses: "BoundedDict[UUID, tuple[str, SecurityAnalysisResponse]]" = BoundedDict(10_000)
+security_incidents: "BoundedDict[UUID, SecurityIncident]" = BoundedDict(10_000)
+
+
+def _user_incidents(user_id: UUID) -> List[SecurityIncident]:
+    uid = str(user_id)
+    return [i for i in list(security_incidents.values()) if i.user_id == uid]
+
+
+def _get_owned_incident(incident_id: UUID, user_id: UUID) -> SecurityIncident:
+    incident = security_incidents.get(incident_id)
+    # 404 (not 403) for other users' incidents to avoid enumeration
+    if not incident or incident.user_id != str(user_id):
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return incident
 
 
 def analyze_prompt_injection(content: str, fast_mode: bool = False) -> Optional[ThreatDetection]:
@@ -309,7 +338,7 @@ def analyze_jailbreak(content: str) -> Optional[ThreatDetection]:
 async def analyze_security(
     request: SecurityAnalysisRequest,
     background_tasks: BackgroundTasks,
-    auth_data = Depends(get_authenticated_user)
+    auth_data = Depends(require_auth("security:analyze"))
 ):
     """Analyze content for security threats"""
     import asyncio
@@ -365,10 +394,10 @@ async def analyze_security(
         trace_id=request.trace_id
     )
     
-    security_analyses[analysis_id] = response
+    current_user, api_key_id = auth_data
+    security_analyses[analysis_id] = (str(current_user.user_id), response)
     
     # Track API key usage in background (non-blocking)
-    current_user, api_key_id = auth_data
     if api_key_id:
         background_tasks.add_task(track_api_key_usage, api_key_id, "/security/analyze", 0, 0.0)
     
@@ -399,7 +428,7 @@ async def list_incidents(
     limit: int = 50
 ):
     """List security incidents"""
-    incidents = list(security_incidents.values())
+    incidents = _user_incidents(current_user.user_id)
     
     if status:
         incidents = [i for i in incidents if i.status == status]
@@ -415,10 +444,8 @@ async def get_incident(
     incident_id: UUID,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Get a specific security incident"""
-    if incident_id not in security_incidents:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    return security_incidents[incident_id]
+    """Get a specific security incident (only if it belongs to the current user)"""
+    return _get_owned_incident(incident_id, current_user.user_id)
 
 
 @router.patch("/incidents/{incident_id}/status")
@@ -428,14 +455,13 @@ async def update_incident_status(
     current_user: TokenData = Depends(get_current_user)
 ):
     """Update incident status"""
-    if incident_id not in security_incidents:
-        raise HTTPException(status_code=404, detail="Incident not found")
+    incident = _get_owned_incident(incident_id, current_user.user_id)
     
     valid_statuses = ["open", "investigating", "resolved", "false_positive"]
     if status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
     
-    security_incidents[incident_id].status = status
+    incident.status = status
     return {"message": "Status updated", "incident_id": incident_id, "status": status}
 
 
@@ -445,19 +471,22 @@ async def get_security_stats(current_user: TokenData = Depends(get_current_user)
     from api.db import get_conn
     from sqlalchemy import text
     
-    # JWT trace data (in-memory)
-    jwt_analyses = len(security_analyses)
-    total_incidents = len(security_incidents)
+    # JWT trace data (in-memory, scoped to the current user)
+    uid = str(current_user.user_id)
+    user_analyses = [a for owner, a in list(security_analyses.values()) if owner == uid]
+    user_incidents = _user_incidents(current_user.user_id)
+    jwt_analyses = len(user_analyses)
+    total_incidents = len(user_incidents)
     
     threat_counts = {}
-    for incident in security_incidents.values():
+    for incident in user_incidents:
         threat_type = incident.threat_type.value
         threat_counts[threat_type] = threat_counts.get(threat_type, 0) + 1
     
-    open_incidents = len([i for i in security_incidents.values() if i.status == "open"])
+    open_incidents = len([i for i in user_incidents if i.status == "open"])
     
     jwt_risk_score = round(
-        sum(a.risk_score for a in security_analyses.values()) / max(jwt_analyses, 1),
+        sum(a.risk_score for a in user_analyses) / max(jwt_analyses, 1),
         3
     ) if jwt_analyses > 0 else 0
     

@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchJSON } from "@/utils/api";
+import { fetchWithAuth } from "@/utils/api";
 
 interface ProviderKey {
   id: string;
@@ -78,8 +77,7 @@ export default function SettingsPage() {
 }
 
 function SettingsPageContent() {
-  const router = useRouter();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [keys, setKeys] = useState<ProviderKey[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,21 +90,7 @@ function SettingsPageContent() {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const getAuthToken = () => {
-    return localStorage.getItem("auth_token");
-  };
-
   const loadData = async () => {
-    const token = getAuthToken();
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-
     try {
       // Load providers
       const providersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api-keys/providers`);
@@ -135,16 +119,8 @@ function SettingsPageContent() {
       setProviders(providerList);
 
       // Load user's keys
-      const keysRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api-keys/keys`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (keysRes.status === 401) {
-        router.push("/login");
-        return;
-      }
+      // Cookie session; fetchWithAuth redirects to /login on 401
+      const keysRes = await fetchWithAuth("/api-keys/keys");
 
       const keysData = await keysRes.json();
       // Normalize and transform to match expected format
@@ -168,6 +144,10 @@ function SettingsPageContent() {
     }
   };
 
+  useEffect(() => {
+    loadData();
+  }, []);
+
   const handleAddKey = (provider: Provider) => {
     setSelectedProvider(provider);
     setApiKey("");
@@ -184,14 +164,12 @@ function SettingsPageContent() {
     setSuccess("");
 
     try {
-      const token = getAuthToken();
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api-keys/keys`,
+      const response = await fetchWithAuth(
+        "/api-keys/keys",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ 
             provider: selectedProvider.id,
@@ -223,15 +201,9 @@ function SettingsPageContent() {
     }
 
     try {
-      const token = getAuthToken();
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api-keys/keys/${keyId}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+      const response = await fetchWithAuth(
+        `/api-keys/keys/${keyId}`,
+        { method: "DELETE" }
       );
 
       if (!response.ok) {
@@ -362,7 +334,7 @@ function SettingsPageContent() {
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Email:</span>
-              <span className="text-foreground">{localStorage.getItem("user_email")}</span>
+              <span className="text-foreground">{user?.email}</span>
             </div>
           </div>
         </div>

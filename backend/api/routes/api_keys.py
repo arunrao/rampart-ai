@@ -7,24 +7,15 @@ from typing import List, Optional, Dict
 from datetime import datetime
 from uuid import UUID, uuid4
 from enum import Enum
-from cryptography.fernet import Fernet
-import base64
-from functools import lru_cache
+import logging
 
-from api.config import get_settings
 from api.routes.auth import get_current_user, TokenData
+from api.security.crypto import encrypt_api_key as _encrypt, decrypt_api_key as _decrypt
 from api.db import get_conn
 from sqlalchemy import text
 
 router = APIRouter()
-
-
-@lru_cache(maxsize=1)
-def _fernet_cipher() -> Fernet:
-    """Fernet instance derived from Settings.key_encryption_secret (single source of truth)."""
-    secret = get_settings().key_encryption_secret
-    encryption_key = base64.urlsafe_b64encode(secret.encode()[:32].ljust(32, b"0"))
-    return Fernet(encryption_key)
+logger = logging.getLogger(__name__)
 
 
 class ProviderType(str, Enum):
@@ -60,13 +51,13 @@ class APIKeyTest(BaseModel):
 
 
 def encrypt_api_key(api_key: str) -> str:
-    """Encrypt API key for storage"""
-    return _fernet_cipher().encrypt(api_key.encode()).decode()
+    """Encrypt API key for storage (AES-GCM via api.security.crypto — same scheme the LLM proxy decrypts with)"""
+    return _encrypt(api_key)[0]
 
 
 def decrypt_api_key(encrypted_key: str) -> str:
     """Decrypt API key from storage"""
-    return _fernet_cipher().decrypt(encrypted_key.encode()).decode()
+    return _decrypt(encrypted_key)
 
 
 def mask_api_key(api_key: str) -> str:
@@ -95,7 +86,7 @@ async def create_api_key(
     current_user: TokenData = Depends(get_current_user)
 ):
     """Create or update an API key for a provider"""
-    user_id = current_user.user_id
+    user_id = str(current_user.user_id)
     
     # Validate key format
     if not validate_api_key_format(request.provider, request.api_key):
@@ -138,7 +129,7 @@ async def create_api_key(
                     "provider": request.provider.value
                 }
             )
-            key_id = existing[0]
+            key_id = UUID(str(existing[0]))
         else:
             # Create new key
             key_id = uuid4()
@@ -149,7 +140,7 @@ async def create_api_key(
                     VALUES (:id, :user_id, :provider, :key_encrypted, :last_4, 'active', :created_at, :updated_at)
                 """),
                 {
-                    "id": key_id,
+                    "id": str(key_id),
                     "user_id": user_id,
                     "provider": request.provider.value,
                     "key_encrypted": encrypted_key,
@@ -175,7 +166,7 @@ async def create_api_key(
 @router.get("/keys", response_model=List[APIKeyResponse])
 async def list_api_keys(current_user: TokenData = Depends(get_current_user)):
     """List all API keys for the current user"""
-    user_id = current_user.user_id
+    user_id = str(current_user.user_id)
     
     with get_conn() as conn:
         rows = conn.execute(
@@ -209,7 +200,7 @@ async def get_api_key(
     current_user: TokenData = Depends(get_current_user)
 ):
     """Get API key for a specific provider"""
-    user_id = current_user.user_id
+    user_id = str(current_user.user_id)
     
     with get_conn() as conn:
         row = conn.execute(
@@ -241,7 +232,7 @@ async def delete_api_key(
     current_user: TokenData = Depends(get_current_user)
 ):
     """Delete an API key"""
-    user_id = current_user.user_id
+    user_id = str(current_user.user_id)
     
     with get_conn() as conn:
         result = conn.execute(
@@ -249,7 +240,7 @@ async def delete_api_key(
                 DELETE FROM provider_keys
                 WHERE id = :key_id AND user_id = :user_id
             """),
-            {"key_id": key_id, "user_id": user_id}
+            {"key_id": str(key_id), "user_id": user_id}
         )
         conn.commit()
         
@@ -328,11 +319,13 @@ async def test_api_key(
                 "message": "API key format is valid" if is_valid else "Invalid API key format"
             }
     
-    except Exception as e:
+    except Exception:
+        # Don't echo exception text (can include upstream URLs/headers) back to the client
+        logger.warning("Provider API key test failed", exc_info=True)
         return {
             "valid": False,
             "provider": request.provider.value,
-            "message": f"Error testing API key: {str(e)}"
+            "message": "Error testing API key"
         }
 
 
@@ -369,15 +362,3 @@ async def list_providers():
             "docs_url": "https://huggingface.co/settings/tokens"
         }
     ]
-
-
-def get_user_api_key(user_id: str, provider: ProviderType) -> Optional[str]:
-    """Helper function to get user's API key for a provider"""
-    if user_id not in user_api_keys:
-        return None
-    
-    for key_data in user_api_keys[user_id].values():
-        if key_data["provider"] == provider:
-            return key_data["api_key"]
-    
-    return None

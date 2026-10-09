@@ -22,11 +22,12 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Gauge,
 } from "lucide-react";
 
 export default function Navigation() {
   const pathname = usePathname();
-  const { user, logout, loading } = useAuth();
+  const { user, logout, loading, isSuperAdmin } = useAuth();
   const { isSidebarOpen, setIsSidebarOpen } = useSidebar();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -54,6 +55,7 @@ export default function Navigation() {
     { href: "/api-keys", label: "API Keys", icon: Key },
     { href: "/docs", label: "API Docs", icon: BookOpen },
     { href: "/testing", label: "Testing", icon: FlaskConical },
+    ...(isSuperAdmin ? [{ href: "/admin", label: "Admin", icon: Gauge }] : []),
   ];
 
   return (

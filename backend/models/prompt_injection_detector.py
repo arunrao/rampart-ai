@@ -391,8 +391,12 @@ class DeBERTaPromptInjectionDetector:
         try:
             logger.info(f"Loading DeBERTa model: {self.model_name}")
             
+            # Pin to a reviewed commit so a Hub-side change cannot alter what we execute
+            from models.pinned_revisions import revision_for
+            revision = revision_for(self.model_name)
+
             # Load tokenizer
-            self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, revision=revision)
             
             # Try ONNX first for faster inference
             if self.use_onnx:
@@ -403,6 +407,7 @@ class DeBERTaPromptInjectionDetector:
                         model = ORTModelForSequenceClassification.from_pretrained(
                             self.model_name,
                             export=False,  # Don't re-export if already exists
+                            revision=revision,
                         )
                         logger.info("✓ ONNX model loaded from cache (3x faster)")
                     except Exception:
@@ -411,6 +416,7 @@ class DeBERTaPromptInjectionDetector:
                         model = ORTModelForSequenceClassification.from_pretrained(
                             self.model_name,
                             export=True,  # Export to ONNX
+                            revision=revision,
                         )
                         logger.info("✓ ONNX model exported and cached for future use")
                     
@@ -418,12 +424,12 @@ class DeBERTaPromptInjectionDetector:
                     logger.warning(f"ONNX loading failed: {onnx_error}")
                     logger.info("Falling back to PyTorch model...")
                     model = AutoModelForSequenceClassification.from_pretrained(
-                        self.model_name
+                        self.model_name, revision=revision
                     )
             else:
                 # Load PyTorch model directly
                 model = AutoModelForSequenceClassification.from_pretrained(
-                    self.model_name
+                    self.model_name, revision=revision
                 )
             
             # Create pipeline (ORTModel isn't in transformers' pipeline() stubs; runtime supports it.)

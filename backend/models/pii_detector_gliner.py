@@ -52,6 +52,10 @@ class GLiNERPIIDetector:
         "balanced": "knowledgator/gliner-pii-small-v1.0",  # F1 76.8% — FP16  ONNX ~330MB
         "accurate": "knowledgator/gliner-pii-base-v1.0",   # F1 81.0% — FP16  ONNX ~330MB
     }
+    # ONNX graphs ship under onnx/ in these repos. fp32 matches PyTorch scores exactly;
+    # the quint8 variant drops entity confidence below our 0.7 threshold and fp16 fails
+    # to load on CPU onnxruntime, so fp32 is used for every tier.
+    ONNX_FILE = "onnx/model.onnx"
     
     # Default PII entity labels for GLiNER.
     # Keep this list lean — GLiNER inference scales as O(tokens × labels),
@@ -120,6 +124,8 @@ class GLiNERPIIDetector:
             return None
 
         model_name = self.MODELS.get(self.model_type, self.MODELS["balanced"])
+        from models.pinned_revisions import revision_for
+        revision = revision_for(model_name)
         
         try:
             logger.info(f"Loading GLiNER model: {model_name}")
@@ -129,9 +135,10 @@ class GLiNERPIIDetector:
                 try:
                     model = GLiNER.from_pretrained(
                         model_name,
+                        revision=revision,
                         load_onnx_model=True,
                         load_tokenizer=True,
-                        onnx_model_file="model.onnx"
+                        onnx_model_file=self.ONNX_FILE,
                     )
                     logger.info(f"Loaded ONNX model: {model_name}")
                     return model
@@ -139,7 +146,7 @@ class GLiNERPIIDetector:
                     logger.warning(f"ONNX load failed: {onnx_error}, trying PyTorch")
             
             # Fallback to PyTorch
-            model = GLiNER.from_pretrained(model_name)
+            model = GLiNER.from_pretrained(model_name, revision=revision)
             logger.info(f"Loaded PyTorch model: {model_name}")
             return model
             

@@ -7,7 +7,12 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
+import json
 import secrets
+import threading
+import time
+from collections import defaultdict, deque
+from typing import Deque, Dict, Iterable
 import bcrypt
 import hashlib
 
@@ -449,10 +454,60 @@ async def set_template_pack(
     )
 
 
+def _parse_permissions(value) -> set[str]:
+    """Permissions are a TEXT[] on PostgreSQL and a JSON string on SQLite."""
+    if not value:
+        return set()
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return set()
+    return {str(p) for p in value}
+
+
+class _PerKeyRateLimiter:
+    """Sliding-window limiter enforcing each API key's own per-minute/per-hour limits (per process)."""
+
+    def __init__(self) -> None:
+        self._hits: Dict[UUID, Deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def check(self, key_id: UUID, per_minute: Optional[int], per_hour: Optional[int]) -> None:
+        now = time.time()
+        with self._lock:
+            hits = self._hits[key_id]
+            while hits and hits[0] <= now - 3600:
+                hits.popleft()
+            minute_count = sum(1 for t in hits if t > now - 60)
+            if per_minute and minute_count >= per_minute:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"API key rate limit exceeded ({per_minute} requests per minute)",
+                    headers={"Retry-After": "60"},
+                )
+            if per_hour and len(hits) >= per_hour:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"API key rate limit exceeded ({per_hour} requests per hour)",
+                    headers={"Retry-After": "3600"},
+                )
+            hits.append(now)
+
+
+_key_rate_limiter = _PerKeyRateLimiter()
+
+
 # Authentication dependency for API key access
-async def get_current_user_from_api_key(api_key: str) -> tuple[TokenData, UUID]:
+async def get_current_user_from_api_key(
+    api_key: str,
+    required_any: Iterable[str] = (),
+) -> tuple[TokenData, UUID]:
     """
     Authenticate user via Rampart API key (not JWT).
+
+    Enforces the key's permissions (the key must hold at least one of ``required_any``
+    when given) and its per-key rate limits.
     Returns (user_data, api_key_id) for tracking usage.
     """
     if not api_key or not api_key.startswith('rmp_'):
@@ -462,22 +517,27 @@ async def get_current_user_from_api_key(api_key: str) -> tuple[TokenData, UUID]:
         )
     
     with get_conn() as conn:
-        # Find matching key
+        # Narrow candidates by the stored preview (first 12 + last 4 chars) so we run
+        # bcrypt against ~1 row instead of every key in the system. Every key shares
+        # the 'rmp_live_' prefix, so filtering on prefix alone made each request
+        # (including bogus keys) cost N bcrypt checks — an unauthenticated CPU DoS.
         result = conn.execute(
             text("""
                 SELECT 
                     k.id, k.user_id, k.key_hash, k.permissions, k.is_active, k.expires_at,
-                    u.email
+                    u.email, k.rate_limit_per_minute, k.rate_limit_per_hour
                 FROM rampart_api_keys k
                 JOIN users u ON k.user_id = u.id
-                WHERE k.key_prefix = :prefix AND k.is_active = true
+                WHERE k.key_preview = :preview AND k.is_active = true AND u.is_active = true
+                LIMIT 5
             """),
-            {"prefix": api_key.split('_')[0] + '_' + api_key.split('_')[1] + '_'}  # e.g., 'rmp_live_'
+            {"preview": get_key_preview(api_key)}
         ).fetchall()
         
-        # Check each key hash (there might be multiple with same prefix)
+        # Check each candidate hash (preview collisions are possible but rare)
         for row in result:
-            key_id, user_id, key_hash, permissions, is_active, expires_at, email = row
+            (key_id, user_id, key_hash, permissions, is_active, expires_at, email,
+             per_minute, per_hour) = row
             
             if verify_rampart_api_key(api_key, key_hash):
                 # Check if expired
@@ -486,6 +546,15 @@ async def get_current_user_from_api_key(api_key: str) -> tuple[TokenData, UUID]:
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="API key has expired"
                     )
+
+                required = set(required_any)
+                if required and not (required & _parse_permissions(permissions)):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"API key lacks required permission (one of: {sorted(required)})"
+                    )
+
+                _key_rate_limiter.check(key_id, per_minute, per_hour)
                 
                 # Update last_used_at
                 conn.execute(

@@ -13,6 +13,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def get_client_ip(request: Request) -> str:
+    """
+    Resolve the client IP without trusting spoofable headers.
+
+    X-Forwarded-For is only honoured for the configured number of trusted proxy hops:
+    each trusted proxy appends the address it saw, so the client is the entry
+    ``trusted_proxy_count`` positions from the right. Anything further left is
+    client-controlled and ignored.
+    """
+    from api.config import get_settings
+
+    hops = get_settings().trusted_proxy_count
+    if hops > 0:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            chain = [p.strip() for p in forwarded.split(",") if p.strip()]
+            if len(chain) >= hops:
+                return chain[-hops]
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
 class APIKeyEnforcementMiddleware(BaseHTTPMiddleware):
     """Enforce API key or JWT authentication on all non-public endpoints"""
     
@@ -57,6 +80,11 @@ class APIKeyEnforcementMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("Authorization")
         
         if not auth_header:
+            # Dashboard sessions arrive as an HttpOnly cookie; the route dependency
+            # (api.routes.auth.extract_token) validates it and enforces the CSRF header.
+            from api.config import get_settings
+            if request.cookies.get(get_settings().session_cookie_name):
+                return await call_next(request)
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={
@@ -172,22 +200,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.oauth_requests_per_hour = 30    # Only 30 OAuth attempts per hour
         self.oauth_request_counts: Dict[str, Tuple[list, list]] = defaultdict(lambda: ([], []))
     
-    def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request"""
-        # Check for forwarded headers (behind proxy)
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-        
-        # Fallback to direct client
-        if request.client:
-            return request.client.host
-        return "unknown"
-    
     def _cleanup_old_entries(self):
         """Remove old entries to prevent memory bloat"""
         current_time = time.time()
@@ -228,7 +240,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path in ["/health", "/metrics", "/"]:
             return await call_next(request)
         
-        client_ip = self._get_client_ip(request)
+        client_ip = get_client_ip(request)
         current_time = time.time()
         
         # Cleanup periodically
@@ -363,7 +375,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         user_id, api_key_preview = self._get_auth_context(request)
         endpoint = request.url.path
         method = request.method
-        ip = self._get_client_ip(request)
+        ip = get_client_ip(request)
         status_code = response.status_code
 
         # Fire-and-forget: write to DB in a thread-pool worker so the client
@@ -377,18 +389,6 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         )
 
         return response
-
-    @staticmethod
-    def _get_client_ip(request: Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-        if request.client:
-            return request.client.host
-        return "unknown"
 
     @staticmethod
     def _get_auth_context(request: Request) -> Tuple[Optional[str], Optional[str]]:
