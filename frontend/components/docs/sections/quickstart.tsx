@@ -72,7 +72,7 @@ response = requests.post(
     headers={"Authorization": "Bearer rmp_live_xxxxx"},
     json={
         "prompt": user_input,
-        "model": "gpt-4",
+        "model": "gpt-6.1-sol",
         "provider": "openai",
         "user_id": "user_123"
     }

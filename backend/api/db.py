@@ -2,14 +2,17 @@ import os
 import json
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 from functools import lru_cache
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from api.models import Base
 
 # Require DATABASE_URL to be set explicitly - no default credentials
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 if not DATABASE_URL:
     # For local development only, use SQLite
     DATABASE_URL = "sqlite:///./rampart_dev.db"
@@ -17,17 +20,19 @@ if not DATABASE_URL:
     logging.warning("DATABASE_URL not set, using SQLite for development: %s", DATABASE_URL)
 
 _engine: Optional[Engine] = None
+_SessionLocal: Optional[sessionmaker[Session]] = None
 
 
 def reset_engine() -> None:
     """Dispose and clear the global engine (used by tests to rebind DATABASE_URL)."""
-    global _engine
+    global _engine, _SessionLocal
     if _engine is not None:
         try:
             _engine.dispose()
         except Exception:
             pass
     _engine = None
+    _SessionLocal = None
 
 
 def get_engine() -> Engine:
@@ -57,6 +62,41 @@ def get_conn():
         yield conn
     finally:
         conn.close()
+
+
+def get_sessionmaker() -> sessionmaker[Session]:
+    global _SessionLocal
+    if _SessionLocal is None:
+        _SessionLocal = sessionmaker(bind=get_engine(), expire_on_commit=False)
+    return _SessionLocal
+
+
+@contextmanager
+def get_session() -> Iterator[Session]:
+    """ORM unit of work: commits on success, rolls back on error, always closes."""
+    session = get_sessionmaker()()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def get_db() -> Iterator[Session]:
+    """FastAPI dependency: ``db: Session = Depends(get_db)``."""
+    with get_session() as session:
+        yield session
+
+
+def create_all_tables() -> None:
+    """Create every ORM-declared table that does not yet exist (SQLite/dev/tests).
+
+    PostgreSQL deployments are migrated with Alembic instead; see backend/alembic/.
+    """
+    Base.metadata.create_all(get_engine())
 
 
 def init_defaults_table() -> None:
@@ -141,7 +181,7 @@ def set_default(key: str, value: Dict[str, Any]) -> None:
                 text(
                     """
                     INSERT INTO policy_defaults (key, value, updated_at)
-                    VALUES (:k, :v::jsonb, :u)
+                    VALUES (:k, CAST(:v AS JSONB), :u)
                     ON CONFLICT (key)
                     DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
                     """
@@ -315,7 +355,7 @@ def init_rampart_api_keys_table() -> None:
                       key_prefix VARCHAR(20) NOT NULL,
                       key_hash VARCHAR(255) NOT NULL,
                       key_preview VARCHAR(20) NOT NULL,
-                      permissions TEXT[] DEFAULT ARRAY['security:analyze', 'filter:pii', 'llm:chat'],
+                      permissions JSONB DEFAULT '["security:analyze", "filter:pii", "llm:chat"]'::jsonb,
                       rate_limit_per_minute INTEGER DEFAULT 60,
                       rate_limit_per_hour INTEGER DEFAULT 1000,
                       is_active BOOLEAN DEFAULT true,
@@ -460,7 +500,7 @@ def init_policies_table() -> None:
                       policy_type TEXT NOT NULL,
                       rules JSONB NOT NULL DEFAULT '[]',
                       enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                      tags TEXT[] NOT NULL DEFAULT '{}',
+                      tags JSONB NOT NULL DEFAULT '[]'::jsonb,
                       created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
                       updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
                       created_by TEXT,
@@ -622,7 +662,7 @@ def insert_audit_log(
                            status_code, processing_time_ms, event_type, metadata, timestamp)
                         VALUES
                           (:user_id, :api_key_preview, :endpoint, :http_method, :ip_address,
-                           :status_code, :processing_time_ms, :event_type, :metadata::jsonb, :ts)
+                           :status_code, :processing_time_ms, :event_type, CAST(:metadata AS JSONB), :ts)
                         """
                     ),
                     {
@@ -653,3 +693,5 @@ def init_all_tables() -> None:
     init_policies_table()
     init_audit_logs_table()
     migrate_add_template_pack_column()
+    # Tables that only exist as ORM models (e.g. injection_feedback)
+    create_all_tables()

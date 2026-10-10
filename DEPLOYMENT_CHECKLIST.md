@@ -225,8 +225,11 @@ pg_dump rampart > backup.sql
 # Restore database
 psql rampart < backup.sql
 
-# Run migrations
-alembic upgrade head
+# Migrations run automatically when the backend container starts
+# (backend/docker-entrypoint.sh -> python -m api.migrate). To run or verify by hand:
+cd backend
+python -m api.migrate            # upgrade to head (idempotent; stamps pre-Alembic DBs)
+python -m api.migrate --check    # exit 1 if the schema is behind head
 ```
 
 ## Success Criteria

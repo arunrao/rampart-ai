@@ -23,5 +23,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=2 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
 
+# Apply pending Alembic migrations before the app starts (docker-entrypoint.sh).
+ENTRYPOINT ["./docker-entrypoint.sh"]
+
 # Run the application
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

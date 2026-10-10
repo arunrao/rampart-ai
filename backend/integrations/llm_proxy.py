@@ -8,7 +8,7 @@ Features:
 - Data exfiltration monitoring
 - Cost tracking and observability
 """
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, cast
 from datetime import datetime
 import time
 import asyncio
@@ -36,7 +36,7 @@ class LLMProxy:
     def __init__(
         self,
         provider: str = "openai",
-        detector_type: str = None,
+        detector_type: Optional[str] = None,
         use_onnx: bool = True,
         fast_mode: bool = False
     ):
@@ -77,7 +77,7 @@ class LLMProxy:
     async def complete(
         self,
         messages: List[Dict[str, str]],
-        model: str = "gpt-3.5-turbo",
+        model: str = "gpt-6.1-sol",
         trace_id: Optional[str] = None,
         user_id: Optional[UUID] = None,
         security_checks: bool = True,
@@ -293,15 +293,17 @@ class LLMProxy:
             import openai
             client = openai.AsyncOpenAI(api_key=api_key)
             
+            # The SDK types `messages` as a union of role-specific TypedDicts; our
+            # plain {"role","content"} dicts are structurally valid members of it.
             response = await client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=cast(Any, messages),
                 **kwargs
             )
             
             return {
                 "content": response.choices[0].message.content,
-                "tokens_used": response.usage.total_tokens,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
                 "model": model
             }
         except Exception as e:
@@ -313,24 +315,29 @@ class LLMProxy:
             import anthropic
             client = anthropic.AsyncAnthropic(api_key=api_key)
             
-            # Convert messages format for Anthropic
-            system_msg = None
-            user_messages = []
+            # Anthropic takes the system prompt as a top-level argument, not a message,
+            # and the argument must be omitted (not None) when there isn't one.
+            system_msg: Optional[str] = None
+            user_messages: List[Dict[str, str]] = []
             for msg in messages:
                 if msg["role"] == "system":
                     system_msg = msg["content"]
                 else:
                     user_messages.append(msg)
+            extra: Dict[str, Any] = {"system": system_msg} if system_msg else {}
             
             response = await client.messages.create(
                 model=model,
                 max_tokens=kwargs.get("max_tokens", 1024),
-                system=system_msg,
-                messages=user_messages
+                messages=cast(Any, user_messages),
+                **extra,
             )
             
+            # content is a list of typed blocks (text, tool_use, thinking, ...); only
+            # text blocks carry .text, so join those rather than indexing [0].
+            text_out = "".join(getattr(block, "text", "") for block in response.content)
             return {
-                "content": response.content[0].text,
+                "content": text_out,
                 "tokens_used": response.usage.input_tokens + response.usage.output_tokens,
                 "model": model
             }
@@ -341,10 +348,13 @@ class LLMProxy:
         """Calculate cost based on model and tokens"""
         # Pricing per 1K tokens (approximate)
         pricing = {
-            "gpt-4": 0.03,
-            "gpt-3.5-turbo": 0.002,
-            "claude-3-opus": 0.015,
-            "claude-3-sonnet": 0.003
+            "gpt-6-astra": 0.010,
+            "gpt-6.1-sol": 0.002,
+            "gpt-6-luna": 0.0001,
+            "claude-fable-5-1": 0.010,
+            "claude-opus-5-5": 0.004,
+            "claude-sonnet-5-5": 0.002,
+            "claude-haiku-5-5": 0.0001,
         }
         
         price_per_1k = pricing.get(model, 0.002)

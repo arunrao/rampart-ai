@@ -19,8 +19,11 @@ const ThemeContext = createContext<ThemeContextType>({
 export const useTheme = () => useContext(ThemeContext);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  // Initial value must match the server-rendered default ("system") so hydration doesn't
+  // mismatch; the real stored value is loaded in an effect below, after mount.
   const [theme, setTheme] = useState<Theme>("system");
   const [actualTheme, setActualTheme] = useState<"light" | "dark">("light");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     // Load theme from localStorage
@@ -29,14 +32,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setTheme(storedTheme);
     } else {
       // Default to system and persist so UI reflects selection
-      setTheme("system");
       localStorage.setItem("theme", "system");
     }
+    setMounted(true);
   }, []);
 
   useEffect(() => {
+    // Skip the first run: `theme` still holds the SSR-safe default here, and the
+    // `beforeInteractive` inline script (app/layout.tsx) has already applied the
+    // correct class. Running this before the real value loads would flash the
+    // wrong theme (e.g. "system" when the user explicitly chose "dark").
+    if (!mounted) return;
+
     const root = window.document.documentElement;
-    
+
     // Remove existing theme classes
     root.classList.remove("light", "dark");
 
@@ -67,7 +76,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     // Save to localStorage
     localStorage.setItem("theme", theme);
-  }, [theme]);
+  }, [theme, mounted]);
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, actualTheme }}>

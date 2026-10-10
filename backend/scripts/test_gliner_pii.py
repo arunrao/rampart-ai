@@ -3,6 +3,9 @@ Test script for GLiNER PII detection
 Run with: python test_gliner_pii.py
 """
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/
 import time
 from models.pii_detector_gliner import GLiNERPIIDetector, detect_pii_gliner, redact_pii_gliner
 
@@ -188,6 +191,7 @@ def test_performance():
             
             # Measure
             latencies = []
+            entities = []
             for _ in range(5):
                 start = time.time()
                 entities = detector.detect(text)

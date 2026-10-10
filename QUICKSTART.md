@@ -99,7 +99,7 @@ async def main():
     
     result = await client.chat(
         prompt="What is machine learning?",
-        model="gpt-3.5-turbo",
+        model="gpt-6-luna",
         user_id="demo_user"
     )
     

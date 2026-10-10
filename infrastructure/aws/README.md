@@ -211,12 +211,22 @@ psql -h $RDS_ENDPOINT -U rampart_admin -d rampart
 
 ### Run Migrations
 
+Migrations are applied automatically on every backend container start
+(`backend/docker-entrypoint.sh` runs `python -m api.migrate` before uvicorn; a
+failed migration aborts startup). Databases created before Alembic was adopted
+are detected and stamped at the baseline revision on first run. To run or
+verify manually:
+
 ```bash
 # From local machine (requires VPN or bastion host)
 export DATABASE_URL="postgresql://rampart_admin:$DB_PASSWORD@$RDS_ENDPOINT:5432/rampart"
 cd backend
-alembic upgrade head
+python -m api.migrate --check   # is the schema at head?
+python -m api.migrate           # upgrade (idempotent)
 ```
+
+Set `SKIP_DB_MIGRATE=1` on the container to disable the startup migration if
+you prefer to run it as a separate deploy step.
 
 ### Backups
 

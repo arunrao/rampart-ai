@@ -1,0 +1,17 @@
+{
+  "_comment": "Attack shapes we know the detector handles only partially. Tracked in every eval run (family 'convention_shaped' and anything listed here) but never used as a CI gate. Promote to a gate once recall is stable.",
+  "families": [
+    {
+      "family": "convention_shaped",
+      "description": "Supply-chain shaped 'conventions' in developer docs: pipe-to-shell, disabling review/CI/verification, installing from unknown sources, pointing tooling at new hosts. The classifier scores these as benign; only the supply-chain regex family fires, capped at FLAG.",
+      "target": "FLAG on code_docs / user_brief profiles",
+      "status": "partial"
+    },
+    {
+      "family": "multilingual",
+      "description": "Non-English direct injections. The ProtectAI DeBERTa model was trained mostly on English; regex rules are English-only. Recall is reported per language in the eval but not gated.",
+      "target": "FLAG+",
+      "status": "partial"
+    }
+  ]
+}

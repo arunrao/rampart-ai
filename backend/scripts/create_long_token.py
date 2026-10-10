@@ -3,8 +3,9 @@
 Create a long-lived JWT token for arunrao@gmail.com for testing
 """
 import sys
+from pathlib import Path
 import os
-sys.path.append('/app')
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/
 
 from api.db import get_conn
 from api.routes.auth import create_access_token

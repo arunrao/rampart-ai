@@ -4,20 +4,15 @@ Policies are now stored in DB; these tests verify the HTTP API surface.
 """
 import pytest
 from uuid import uuid4
-from fastapi.testclient import TestClient
-from api.main import app
-from api.routes.policies import PolicyType, PolicyRule, PolicyAction
-
-client = TestClient(app)
 
 
-def test_list_policies_returns_200(auth_headers):
+def test_list_policies_returns_200(client, auth_headers):
     """Authenticated list request should succeed."""
     response = client.get("/api/v1/policies", headers=auth_headers)
     assert response.status_code in (200, 503), response.text  # 503 if DB unavailable in tests
 
 
-def test_create_policy_returns_201_or_503(auth_headers):
+def test_create_policy_returns_201_or_503(client, auth_headers):
     """Creating a policy should succeed (201) or return 503 when DB is unavailable."""
     payload = {
         "name": "Test Policy",
@@ -31,28 +26,28 @@ def test_create_policy_returns_201_or_503(auth_headers):
     assert response.status_code in (201, 503), response.text
 
 
-def test_get_nonexistent_policy_returns_404_or_503(auth_headers):
+def test_get_nonexistent_policy_returns_404_or_503(client, auth_headers):
     """Requesting a policy that doesn't exist should return 404 (or 503 if DB down)."""
     fake_id = uuid4()
     response = client.get(f"/api/v1/policies/{fake_id}", headers=auth_headers)
     assert response.status_code in (404, 503), response.text
 
 
-def test_delete_nonexistent_policy_returns_404_or_503(auth_headers):
+def test_delete_nonexistent_policy_returns_404_or_503(client, auth_headers):
     """Deleting a policy that doesn't exist should return 404 (or 503 if DB down)."""
     fake_id = uuid4()
     response = client.delete(f"/api/v1/policies/{fake_id}", headers=auth_headers)
     assert response.status_code in (404, 503), response.text
 
 
-def test_toggle_nonexistent_policy_returns_404_or_503(auth_headers):
+def test_toggle_nonexistent_policy_returns_404_or_503(client, auth_headers):
     """Toggling a policy that doesn't exist should return 404 (or 503 if DB down)."""
     fake_id = uuid4()
     response = client.patch(f"/api/v1/policies/{fake_id}/toggle", headers=auth_headers)
     assert response.status_code in (404, 503), response.text
 
 
-def test_evaluate_policies_returns_valid_response(auth_headers):
+def test_evaluate_policies_returns_valid_response(client, auth_headers):
     """Policy evaluation endpoint should return a structured response."""
     payload = {"content": "My SSN is 123-45-6789", "context": {}}
     response = client.post("/api/v1/policies/evaluate", json=payload, headers=auth_headers)
@@ -64,7 +59,7 @@ def test_evaluate_policies_returns_valid_response(auth_headers):
         assert "actions_taken" in body
 
 
-def test_list_compliance_templates(auth_headers):
+def test_list_compliance_templates(client, auth_headers):
     """All five compliance templates should be listed."""
     response = client.get("/api/v1/policies/templates", headers=auth_headers)
     assert response.status_code == 200
@@ -78,19 +73,19 @@ def test_list_compliance_templates(auth_headers):
     assert "ccpa" in template_ids
 
 
-def test_create_from_template_pci_dss(auth_headers):
+def test_create_from_template_pci_dss(client, auth_headers):
     """PCI-DSS template should now be instantiable (was a stub before)."""
     response = client.post("/api/v1/policies/templates/pci_dss", headers=auth_headers)
     assert response.status_code in (201, 503), response.text
 
 
-def test_create_from_template_ccpa(auth_headers):
+def test_create_from_template_ccpa(client, auth_headers):
     """CCPA template should now be instantiable (was a stub before)."""
     response = client.post("/api/v1/policies/templates/ccpa", headers=auth_headers)
     assert response.status_code in (201, 503), response.text
 
 
-def test_list_template_packs(auth_headers):
+def test_list_template_packs(client, auth_headers):
     """All seven template packs should be listed."""
     response = client.get("/api/v1/template-packs", headers=auth_headers)
     assert response.status_code == 200
@@ -102,7 +97,7 @@ def test_list_template_packs(auth_headers):
         assert expected in pack_ids, f"Pack '{expected}' missing from /template-packs"
 
 
-def test_get_specific_template_pack(auth_headers):
+def test_get_specific_template_pack(client, auth_headers):
     """Each template pack should return full config."""
     for pack_id in ("customer_support", "healthcare", "financial"):
         response = client.get(f"/api/v1/template-packs/{pack_id}", headers=auth_headers)
@@ -114,7 +109,7 @@ def test_get_specific_template_pack(auth_headers):
         assert "toxicity_threshold" in body
 
 
-def test_get_unknown_template_pack_returns_422(auth_headers):
+def test_get_unknown_template_pack_returns_422(client, auth_headers):
     """Requesting a non-existent pack should return 422 (FastAPI enum validation)."""
     response = client.get("/api/v1/template-packs/does_not_exist", headers=auth_headers)
     assert response.status_code == 422, response.text

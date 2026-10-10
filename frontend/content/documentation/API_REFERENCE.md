@@ -56,7 +56,7 @@ POST /security/analyze
   ],
   "is_safe": false,
   "risk_score": 0.85,
-  "analyzed_at": "2024-01-01T12:00:00Z",
+  "analyzed_at": "2026-10-09T12:00:00Z",
   "processing_time_ms": 45.2,
   "trace_id": "optional-trace-id"
 }
@@ -251,7 +251,7 @@ All body fields are optional when a template pack is attached — the pack suppl
     "patterns_matched": ["instruction_override"]
   },
   "filters_applied": ["pii", "toxicity", "prompt_injection"],
-  "analyzed_at": "2024-01-01T12:00:00Z",
+  "analyzed_at": "2026-10-09T12:00:00Z",
   "processing_time_ms": 152.78
 }
 ```
@@ -480,7 +480,7 @@ POST /llm/chat
     {"role": "system", "content": "You are a helpful assistant"},
     {"role": "user", "content": "What is the weather like?"}
   ],
-  "model": "gpt-4",
+  "model": "gpt-6.1-sol",
   "provider": "openai",
   "security_checks": true,
   "max_tokens": 1000,
@@ -507,7 +507,7 @@ POST /llm/chat
       "issues": []
     }
   },
-  "model": "gpt-4",
+  "model": "gpt-6.1-sol",
   "provider": "openai",
   "tokens_used": 45,
   "cost": 0.0018,
@@ -565,7 +565,7 @@ Authorization: Bearer <jwt>
     "template_pack": "financial",
     "rate_limit_per_minute": 120,
     "rate_limit_per_hour": 2000,
-    "created_at": "2024-01-01T12:00:00Z"
+    "created_at": "2026-10-09T12:00:00Z"
   }
 ]
 ```
@@ -630,8 +630,8 @@ GET /keys
     "provider": "openai",
     "name": "My OpenAI Key",
     "key_preview": "...k-abc",
-    "created_at": "2024-01-01T12:00:00Z",
-    "updated_at": "2024-01-01T12:00:00Z",
+    "created_at": "2026-10-09T12:00:00Z",
+    "updated_at": "2026-10-09T12:00:00Z",
     "is_valid": true
   }
 ]
@@ -661,8 +661,8 @@ POST /keys
   "provider": "openai", 
   "name": "My OpenAI Key",
   "key_preview": "...k-abc",
-  "created_at": "2024-01-01T12:00:00Z",
-  "updated_at": "2024-01-01T12:00:00Z",
+  "created_at": "2026-10-09T12:00:00Z",
+  "updated_at": "2026-10-09T12:00:00Z",
   "is_valid": true
 }
 ```
@@ -763,7 +763,7 @@ GET /analytics/summary
     "total_calls": 7500,
     "total_tokens": 2500000,
     "total_cost": 125.50,
-    "top_models": ["gpt-4", "gpt-3.5-turbo"]
+    "top_models": ["gpt-6.1-sol", "gpt-6-luna"]
   },
   "performance": {
     "avg_security_latency_ms": 45.2,
@@ -889,7 +889,7 @@ GET /health
 ```json
 {
   "status": "healthy",
-  "timestamp": "2024-01-01T12:00:00Z",
+  "timestamp": "2026-10-09T12:00:00Z",
   "version": "0.1.0",
   "services": {
     "api": "operational",
@@ -929,7 +929,7 @@ GET /status
   "security_models": {
     "prompt_injection": "loaded",
     "content_filter": "loaded",
-    "last_updated": "2024-01-01T10:00:00Z"
+    "last_updated": "2026-10-09T10:00:00Z"
   }
 }
 ```
@@ -993,7 +993,7 @@ All endpoints return consistent error responses:
   "error": "Error type",
   "detail": "Detailed error message",
   "code": "ERROR_CODE",
-  "timestamp": "2024-01-01T12:00:00Z",
+  "timestamp": "2026-10-09T12:00:00Z",
   "trace_id": "trace-uuid"
 }
 ```

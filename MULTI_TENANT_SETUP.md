@@ -156,7 +156,7 @@ client = SecureLLMClient(provider="openai")
 result = await client.chat(
     prompt="What is AI security?",
     user_id=UUID("user-uuid-here"),  # Uses this user's OpenAI key
-    model="gpt-4"
+    model="gpt-6.1-sol"
 )
 ```
 

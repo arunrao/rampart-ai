@@ -189,7 +189,7 @@ def secure_chat(message):
         headers={"Authorization": f"Bearer {TOKEN}"},
         json={
             "messages": [{"role": "user", "content": message}],
-            "model": "gpt-4",
+            "model": "gpt-6.1-sol",
             "provider": "openai",
             "security_checks": True
         }

@@ -3,8 +3,9 @@
 Create a test user for API key testing
 """
 import sys
+from pathlib import Path
 import os
-sys.path.append('/app')
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/
 
 from api.db import get_conn
 from api.routes.auth import hash_password, create_access_token

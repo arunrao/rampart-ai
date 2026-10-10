@@ -29,6 +29,8 @@ Welcome to Project Rampart - AI Security & Observability Platform documentation.
 - **[Testing Guide](TESTING_GUIDE.md)** - How to test security features
 - **[Test Scenarios](TEST_SCENARIOS.md)** - Built-in security test cases
 - **[Validation Framework](VALIDATION_FRAMEWORK.md)** - Custom validation setup
+- **[Injection Scan Eval](INJECTION_SCAN.md)** - Eval harness, CI gates, baseline results
+- **[Eval Corpus Sources](EVAL_CORPUS_SOURCES.md)** - Public repos the eval corpus is fetched from, and their licenses
 
 ### Operations
 - **[Monitoring & Alerting](MONITORING.md)** - Production monitoring setup

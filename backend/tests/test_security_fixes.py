@@ -5,14 +5,12 @@ client-IP handling.
 """
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
 
 from tests.helpers import create_user_and_jwt
 
@@ -29,38 +27,18 @@ def two_users():
 
 
 def _insert_api_key(user_id, permissions, per_minute=60, per_hour=1000) -> str:
-    """Insert a Rampart API key directly (SQLite stores permissions as JSON text)."""
-    from api.db import get_conn
+    """Insert a Rampart API key directly."""
+    from api.db import get_session
+    from api.models import RampartApiKey
     from api.routes.rampart_keys import generate_rampart_api_key, get_key_preview
 
     full_key, prefix, key_hash = generate_rampart_api_key()
-    now = datetime.utcnow()
-    with get_conn() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO rampart_api_keys (
-                    id, user_id, key_name, key_prefix, key_hash, key_preview, permissions,
-                    rate_limit_per_minute, rate_limit_per_hour, is_active, created_at, updated_at
-                ) VALUES (
-                    :id, :user_id, 'test', :prefix, :hash, :preview, :perms,
-                    :pm, :ph, 1, :now, :now
-                )
-                """
-            ),
-            {
-                "id": str(uuid.uuid4()),
-                "user_id": str(user_id),
-                "prefix": prefix,
-                "hash": key_hash,
-                "preview": get_key_preview(full_key),
-                "perms": json.dumps(permissions),
-                "pm": per_minute,
-                "ph": per_hour,
-                "now": now,
-            },
-        )
-        conn.commit()
+    with get_session() as s:
+        s.add(RampartApiKey(
+            user_id=user_id, key_name="test", key_prefix=prefix, key_hash=key_hash,
+            key_preview=get_key_preview(full_key), permissions=list(permissions),
+            rate_limit_per_minute=per_minute, rate_limit_per_hour=per_hour, is_active=True,
+        ))
     return full_key
 
 
@@ -251,12 +229,14 @@ def test_unknown_api_key_skips_bcrypt(client: TestClient, monkeypatch):
 
 
 def test_deactivated_user_jwt_rejected(client: TestClient):
-    from api.db import get_conn
+    from api.db import get_session
+    from api.models import User
 
     _, uid, token = create_user_and_jwt()
-    with get_conn() as conn:
-        conn.execute(text("UPDATE users SET is_active = 0 WHERE id = :id"), {"id": str(uid)})
-        conn.commit()
+    with get_session() as s:
+        user = s.get(User, uid)
+        assert user is not None
+        user.is_active = False
     assert client.get("/api/v1/auth/me", headers=_headers(token)).status_code == 401
 
 

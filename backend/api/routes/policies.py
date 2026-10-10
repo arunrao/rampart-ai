@@ -27,6 +27,7 @@ get_default: Any = None
 set_default: Any = None
 get_conn: Any = None
 insert_audit_log: Any = None
+content_filter_defaults_key: Any = None
 DATABASE_URL: str = ""
 text: Any = None
 detect_pii_gliner: Any = None
@@ -177,11 +178,30 @@ class PolicyEvaluationResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ComplianceTemplate(str, Enum):
+    # Regulatory frameworks
     GDPR = "gdpr"
     HIPAA = "hipaa"
     SOC2 = "soc2"
     PCI_DSS = "pci_dss"
     CCPA = "ccpa"
+    # Use-case starters: small, single-purpose policies users can adopt as-is or edit
+    PII_REDACTION = "pii_redaction"
+    PII_BLOCK = "pii_block"
+    SECRETS_GUARD = "secrets_guard"
+    PROFANITY_BLOCK = "profanity_block"
+    PAYMENT_DATA_GUARD = "payment_data_guard"
+    PRIVACY_REQUEST_TRIAGE = "privacy_request_triage"
+    AUDIT_TRAIL = "audit_trail"
+
+
+_COMPLIANCE_FRAMEWORKS = {
+    ComplianceTemplate.GDPR, ComplianceTemplate.HIPAA, ComplianceTemplate.SOC2,
+    ComplianceTemplate.PCI_DSS, ComplianceTemplate.CCPA,
+}
+
+
+def template_category(template: ComplianceTemplate) -> str:
+    return "compliance" if template in _COMPLIANCE_FRAMEWORKS else "starter"
 
 
 _TEMPLATE_DESCRIPTIONS = {
@@ -190,6 +210,23 @@ _TEMPLATE_DESCRIPTIONS = {
     ComplianceTemplate.SOC2: "Service Organization Controls Type II — requires audit logging and encryption enforcement",
     ComplianceTemplate.PCI_DSS: "Payment Card Industry Data Security Standard — blocks unredacted card data and enforces audit logging",
     ComplianceTemplate.CCPA: "California Consumer Privacy Act — enforces PII redaction and consumer rights (opt-out, deletion)",
+    ComplianceTemplate.PII_REDACTION: "Redact personal data (names, addresses, SSNs, card numbers) before it reaches the model — for customer-facing chat",
+    ComplianceTemplate.PII_BLOCK: "Reject any request containing personal data outright — for pipelines that must never process PII",
+    ComplianceTemplate.SECRETS_GUARD: "Block cleartext passwords, API keys and access tokens — for code assistants and CI/CD bots",
+    ComplianceTemplate.PROFANITY_BLOCK: "Block profane language — for brand-safe or youth-facing assistants",
+    ComplianceTemplate.PAYMENT_DATA_GUARD: "Block CVVs and redact card numbers — PCI-lite for checkout and support bots",
+    ComplianceTemplate.PRIVACY_REQUEST_TRIAGE: "Flag opt-out and deletion requests so they can be routed to a privacy workflow",
+    ComplianceTemplate.AUDIT_TRAIL: "Flag every evaluation so each request leaves an audit record — pair with other policies",
+}
+
+_TEMPLATE_DISPLAY_NAMES = {
+    ComplianceTemplate.PII_REDACTION: "Redact PII",
+    ComplianceTemplate.PII_BLOCK: "Block PII",
+    ComplianceTemplate.SECRETS_GUARD: "Secrets Guard",
+    ComplianceTemplate.PROFANITY_BLOCK: "Profanity Block",
+    ComplianceTemplate.PAYMENT_DATA_GUARD: "Payment Data Guard",
+    ComplianceTemplate.PRIVACY_REQUEST_TRIAGE: "Privacy Request Triage",
+    ComplianceTemplate.AUDIT_TRAIL: "Audit Trail",
 }
 
 
@@ -249,6 +286,61 @@ def create_compliance_template(template: ComplianceTemplate) -> Optional[PolicyC
                 PolicyRule(condition="right_to_delete", action=PolicyAction.FLAG, priority=6),
             ],
             tags=["ccpa", "compliance", "california", "privacy"],
+        ),
+        ComplianceTemplate.PII_REDACTION: PolicyCreate(
+            name="Redact PII",
+            description="Redacts personal data detected by GLiNER (names, addresses, SSNs, card numbers, DOBs)",
+            policy_type=PolicyType.CONTENT_FILTER,
+            rules=[PolicyRule(condition="contains_pii", action=PolicyAction.REDACT, priority=10)],
+            tags=["starter", "pii", "chat"],
+        ),
+        ComplianceTemplate.PII_BLOCK: PolicyCreate(
+            name="Block PII",
+            description="Blocks any content containing personal data — strict mode for pipelines that must never see PII",
+            policy_type=PolicyType.CONTENT_FILTER,
+            rules=[PolicyRule(condition="contains_pii", action=PolicyAction.BLOCK, priority=10)],
+            tags=["starter", "pii", "strict"],
+        ),
+        ComplianceTemplate.SECRETS_GUARD: PolicyCreate(
+            name="Secrets Guard",
+            description="Blocks cleartext credentials: password=, api_key:, access_token= and similar",
+            policy_type=PolicyType.CONTENT_FILTER,
+            rules=[PolicyRule(condition="encryption_required", action=PolicyAction.BLOCK, priority=10)],
+            tags=["starter", "secrets", "code"],
+        ),
+        ComplianceTemplate.PROFANITY_BLOCK: PolicyCreate(
+            name="Profanity Block",
+            description="Blocks content containing profane words",
+            policy_type=PolicyType.CONTENT_FILTER,
+            rules=[PolicyRule(condition="profanity", action=PolicyAction.BLOCK, priority=10)],
+            tags=["starter", "brand-safety"],
+        ),
+        ComplianceTemplate.PAYMENT_DATA_GUARD: PolicyCreate(
+            name="Payment Data Guard",
+            description="Blocks CVVs outright and redacts card numbers / PANs",
+            policy_type=PolicyType.CONTENT_FILTER,
+            rules=[
+                PolicyRule(condition="contains_cvv", action=PolicyAction.BLOCK, priority=10),
+                PolicyRule(condition="contains_card_data", action=PolicyAction.REDACT, priority=5),
+            ],
+            tags=["starter", "payments"],
+        ),
+        ComplianceTemplate.PRIVACY_REQUEST_TRIAGE: PolicyCreate(
+            name="Privacy Request Triage",
+            description="Flags 'do not sell / opt out' and 'delete my data' requests for routing to a privacy workflow",
+            policy_type=PolicyType.DATA_GOVERNANCE,
+            rules=[
+                PolicyRule(condition="data_sale_opt_out", action=PolicyAction.FLAG, priority=10),
+                PolicyRule(condition="right_to_delete", action=PolicyAction.FLAG, priority=10),
+            ],
+            tags=["starter", "privacy", "ccpa", "gdpr"],
+        ),
+        ComplianceTemplate.AUDIT_TRAIL: PolicyCreate(
+            name="Audit Trail",
+            description="Flags every evaluated request so it appears in the audit log; never blocks",
+            policy_type=PolicyType.COMPLIANCE,
+            rules=[PolicyRule(condition="audit_log_required", action=PolicyAction.FLAG, priority=1)],
+            tags=["starter", "audit"],
         ),
     }
     return templates.get(template)
@@ -458,8 +550,8 @@ def _db_create_policy(policy_create: PolicyCreate, user_id: str) -> Policy:
                       (user_id, name, description, policy_type, rules, enabled, tags,
                        created_at, updated_at, version)
                     VALUES
-                      (:user_id, :name, :description, :policy_type, :rules::jsonb, :enabled, :tags,
-                       :created_at, :updated_at, 1)
+                      (:user_id, :name, :description, :policy_type, CAST(:rules AS JSONB), :enabled,
+                       CAST(:tags AS JSONB), :created_at, :updated_at, 1)
                     RETURNING *
                     """
                 ),
@@ -470,7 +562,7 @@ def _db_create_policy(policy_create: PolicyCreate, user_id: str) -> Policy:
                     "policy_type": policy_create.policy_type.value,
                     "rules": rules_json,
                     "enabled": policy_create.enabled,
-                    "tags": policy_create.tags or [],
+                    "tags": tags_json,
                     "created_at": now,
                     "updated_at": now,
                 },
@@ -551,7 +643,7 @@ def _db_update_policy(policy_id: str, user_id: str, update: PolicyCreate) -> Opt
                     """
                     UPDATE policies SET
                       name = :name, description = :description, policy_type = :policy_type,
-                      rules = :rules::jsonb, enabled = :enabled, tags = :tags,
+                      rules = CAST(:rules AS JSONB), enabled = :enabled, tags = CAST(:tags AS JSONB),
                       updated_at = :updated_at, version = version + 1
                     WHERE id = :id AND user_id = :user_id
                     """
@@ -562,7 +654,7 @@ def _db_update_policy(policy_id: str, user_id: str, update: PolicyCreate) -> Opt
                     "policy_type": update.policy_type.value,
                     "rules": rules_json,
                     "enabled": update.enabled,
-                    "tags": update.tags or [],
+                    "tags": tags_json,
                     "updated_at": now,
                     "id": policy_id,
                     "user_id": user_id,
@@ -680,7 +772,8 @@ def _evaluate_condition(condition: str, content: str, context: Dict[str, Any]) -
         if _GLINER_AVAILABLE:
             try:
                 entities = detect_pii_gliner(content)
-                phi_types = {"date_of_birth", "age", "medical", "diagnosis", "health", "patient"}
+                # Must match PIIEntity.type values emitted by GLiNERPIIDetector._map_label_to_type
+                phi_types = {"date_of_birth", "medical_record"}
                 if any(getattr(e, "type", "").lower() in phi_types for e in entities):
                     return True
             except Exception:
@@ -709,7 +802,7 @@ def _evaluate_condition(condition: str, content: str, context: Dict[str, Any]) -
     if condition == "encryption_required":
         # Flag if content contains what looks like cleartext credentials/secrets
         secret_re = re.compile(
-            r"(?i)(password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*['\"]?\S{6,}"
+            r"(?i)(password|passwd|secret(?:[_-]?key)?|api[_-]?key|access[_-]?token)\s*[:=]\s*['\"]?\S{6,}"
         )
         return bool(secret_re.search(content))
 
@@ -808,17 +901,20 @@ async def list_policies(
 
 @router.get("/policies/templates")
 async def list_templates(current_user: TokenData = Depends(get_current_user)):
-    """List available compliance templates with descriptions."""
-    return {
-        "templates": [
-            {
-                "id": t.value,
-                "name": t.value.upper().replace("_", " "),
-                "description": _TEMPLATE_DESCRIPTIONS.get(t, f"{t.value.upper()} compliance template"),
-            }
-            for t in ComplianceTemplate
-        ]
-    }
+    """List available policy templates (compliance frameworks and use-case starters)."""
+    out = []
+    for t in ComplianceTemplate:
+        tpl = create_compliance_template(t)
+        out.append({
+            "id": t.value,
+            "name": _TEMPLATE_DISPLAY_NAMES.get(t, t.value.upper().replace("_", " ")),
+            "category": template_category(t),
+            "description": _TEMPLATE_DESCRIPTIONS.get(t, f"{t.value.upper()} compliance template"),
+            "policy_type": tpl.policy_type.value if tpl else None,
+            "tags": tpl.tags if tpl else [],
+            "rules": [r.dict() for r in tpl.rules] if tpl else [],
+        })
+    return {"templates": out}
 
 
 @router.get("/policies/{policy_id}", response_model=Policy)
@@ -903,7 +999,7 @@ async def evaluate_policies(
 
     violations: List[PolicyViolation] = []
     actions_taken: List[str] = []
-    modified_content: Optional[str] = request.content
+    redacted = False
 
     for policy in policies_to_eval:
         sorted_rules = sorted(policy.rules, key=lambda r: r.priority, reverse=True)
@@ -919,16 +1015,15 @@ async def evaluate_policies(
                 violations.append(violation)
                 actions_taken.append(f"{policy.name}: {rule.action.value}")
                 if rule.action == PolicyAction.REDACT:
-                    modified_content = "[REDACTED]"
-                elif rule.action == PolicyAction.BLOCK:
-                    modified_content = None
+                    redacted = True
 
     allowed = not any(v.action == PolicyAction.BLOCK for v in violations)
+    # Blocked content is never returned, regardless of the order redact/block rules fired in.
     return PolicyEvaluationResponse(
         allowed=allowed,
         violations=violations,
         actions_taken=actions_taken,
-        modified_content=modified_content if modified_content != request.content else None,
+        modified_content="[REDACTED]" if allowed and redacted else None,
     )
 
 

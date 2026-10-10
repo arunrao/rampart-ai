@@ -73,3 +73,7 @@ tmp/
 temp/
 *.tmp
 .cursorrules
+
+# Prompt-injection eval: fetched public corpus and per-run results (regenerate with make eval-corpus)
+backend/eval/corpus/
+backend/eval/results/

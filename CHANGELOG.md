@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Eval corpus source licensing audit.** Two sources in `backend/eval/fetch_corpus.py` were
+  mislabeled `MIT`: `jthack/PIPE` has no `LICENSE` file (all rights reserved by default), and
+  `meta-llama/PurpleLlama`'s fetched READMEs (Llama Guard, Prompt Guard) are under the Llama
+  Community License, not MIT. Both removed. The corpus is fetched on demand and never
+  committed (`backend/eval/corpus/` is gitignored), so nothing was redistributed, but the
+  license tags themselves were wrong. Remaining ~35 sources verified against their actual
+  `LICENSE` files; see `docs/EVAL_CORPUS_SOURCES.md` for the full attributed list.
+
+## [0.3.0] - 2026-10-09
+
+### Added
+
+- **`POST /scan/injection`** — dedicated prompt-injection scanner for untrusted text (fetched pages, uploads, emails, retrieved documents, repository files) with its own `scan:injection` API-key scope. Returns a verdict (`allow | monitor | flag | block | unavailable`) rather than a bare score, plus tiered `reasons` with channel and position, per-chunk DeBERTa spans, and normalization signals (zero-width/tag characters, decoded base64/hex/rot13 payloads, HTML-comment and link-title hidden channels). Three profiles (`third_party_document`, `code_docs`, `user_brief`) set thresholds by *where the text came from*. `/scan/injection/batch` (up to 8 documents), `/scan/injection/profiles`, `/scan/injection/feedback` (hash-keyed labels, content never stored). See `docs/INJECTION_SCAN.md`.
+  - **Fail-closed**: `unavailable` (HTTP 503) replaces ALLOW whenever the classifier did not fully run. No code path turns a model error into `allow`.
+  - **Focused windows**: a short injection buried in a long chunk of prose is also scored in a ±240-char window around each unquoted strong rule hit, so it is not diluted by surrounding text.
+  - **Eval harness with CI gates** (`backend/eval/`, `.github/workflows/injection-eval.yml`): ~1,350 public benign documents plus generated attack families (direct, every hidden channel, multilingual, encoded, homoglyph, chunk-straddle, buried, tool-hijack). Gates: ≥95% recall per attack family at FLAG+, ≤1% BLOCK false-positive rate on technical/imperative docs, AUROC ≥ 0.92, zero degraded rows.
+  - Optional LLM arbiter (`PROMPT_INJECTION_ARBITER_*`) may only move BLOCK → FLAG; any error is a no-op. Misconfiguration now fails at startup instead of degrading silently.
+- **Policy engine: user-defined policies and starter templates.** `GET /policies/templates` now returns `category` (`compliance` | `starter`) and a full rule preview. Seven one-click starters: `pii_redaction`, `pii_block`, `secrets_guard`, `profanity_block`, `payment_data_guard`, `privacy_request_triage`, `audit_trail`. PCI-DSS and CCPA templates are fully implemented. The `/policies` dashboard groups starters and compliance frameworks and shows each template's `condition → action` rules. Full condition reference and endpoint docs in `docs/API_REFERENCE.md#-policies`.
+- **Alembic migrations** for PostgreSQL (`backend/alembic/`); `python -m api.migrate` runs idempotently in the container entrypoint and auto-stamps pre-Alembic databases. `tests/test_orm_models.py` fails if the ORM models, legacy DDL and Alembic head drift apart.
+- **SQLAlchemy ORM models** (`api/models.py`); auth, provider-key, API-key and scan-feedback routes converted from raw `text()` SQL. Test suite runs on both SQLite and PostgreSQL in CI.
+- Sliding dashboard session: the HttpOnly cookie is rotated via `POST /auth/refresh` while the user is active. Production lifetime is now actually applied (`ACCESS_TOKEN_EXPIRE_MINUTES=720`; the old `JWT_EXPIRATION_MINUTES` env var never matched a setting, so sessions were 30 min).
+- Model-backed test tier: `make test-models` runs DeBERTa regression pins and GLiNER-backed policy pins against the pinned HF revisions.
+- **One deploy path.** `make deploy` → `aws/update.sh` builds, tags images `:<git-sha>` and `:latest`, pushes, and rolls the ASG; it refuses a dirty tree or a non-`main` branch so ECR always maps to a commit on `origin/main`. `update-fast.sh` / `update-quick.sh` / `update-remote.sh` / `update-frontend-only.sh` (SSH/SSM in-place restarts that the next refresh silently reverted) are removed. `make smoke` runs post-deploy checks and prints the deployed tags.
+- Pyright is clean across `backend/` and now runs in CI (`backend-tests.yml`, sqlite leg). Fixing the findings also fixed two latent runtime bugs: Anthropic responses indexed `content[0].text` (fails on non-text blocks) and the regex-only detector had no `batch_detect`.
+- Makefile targets for the tooling actually in use: `migrate`, `migrate-check`, `migrate-new`, `audit` (pip-audit + npm audit), `typecheck` (pyright + tsc), `test-backend-pg`, `deploy-*`, `smoke`.
+
+### Security
+
+- `openai` / `anthropic` SDKs are now declared dependencies. They were imported lazily by the LLM proxy and the arbiter but never installed, so BYO-key chat and the arbiter raised `ImportError` inside the image (the arbiter swallowed it as a warning).
+- Operator scripts that mint JWTs / seed demo keys moved to `backend/scripts/` and are excluded from the Docker image (`COPY . .` previously shipped them).
+- GitHub Actions: `permissions: contents: read` on every workflow; all actions pinned to commit SHAs; Dependabot configured for actions, pip and npm (major bumps of `transformers`/`torch`/`next`/`react` excluded — those need the model/UI regression runs by hand).
+- `injection_feedback` is created by Alembic / the ORM like every other table; the runtime `CREATE TABLE IF NOT EXISTS` in `scan.py` is gone, and `init_all_tables()` only runs for SQLite so it no longer races the Postgres migration on a fresh database.
+
+### Fixed
+
+- **Policy `contains_phi` never matched GLiNER output** — it compared against type names (`medical`, `diagnosis`, `patient`) the detector never emits; now matches `date_of_birth` and `medical_record`. The GLiNER path through the policy evaluator is now tested (stubbed in the fast suite, real model under `RAMPART_MODEL_TESTS=1`).
+- **Blocked content could leak as `[REDACTED]`** — a lower-priority `redact` rule firing after a `block` overwrote `modified_content`. Blocked evaluations now always return `modified_content: null`.
+- `encryption_required` condition missed `SECRET_KEY=…` (the most common form); pattern now matches `secret`, `secret_key`, `secret-key`.
+- `/policies/templates` reported `PCI DSS` / `CCPA` as display names derived from the enum; starters have proper names.
+- Policy tests built their own `TestClient` and bypassed the maintenance-mode gate, so four were failing with 503.
+
+### Changed
+
+- **Default LLM model names refreshed** to current generations: examples and docs use `gpt-6.1-sol` (balanced) and `gpt-6-luna` (cost-efficient); injection-arbiter defaults are `gpt-6-luna` / `claude-haiku-5-5`; provider descriptions list GPT-6 Astra/Sol/Luna and Claude Opus/Sonnet/Haiku 5.5 + Fable 5.1; proxy cost table updated to current list prices.
+- Landing page rewritten around the verdict-based scanner, GLiNER-driven policies and starter templates. Unverifiable claims removed ("95% accuracy", "<50ms", "ONNX 3x faster" — DeBERTa runs on PyTorch since optimum-onnx was dropped; "RBAC"; "framework wrappers") in favour of the CI-gated eval numbers.
+- `Makefile` reorganised: `test-backend-pg`, `test-models`, `lint`, `typecheck`, `audit`, `migrate*`, `deploy*`, `smoke`.
+
 ### Security
 
 - **Dashboard session moved to an HttpOnly cookie** — the JWT is no longer placed in the OAuth redirect URL or `localStorage`, so XSS cannot exfiltrate it. The OAuth callback sets a `Secure`/`HttpOnly`/`SameSite` cookie; cookie-authenticated `POST/PUT/PATCH/DELETE` requests must carry `X-Requested-With: XMLHttpRequest` and an allowed `Origin` (CSRF guard). `Authorization: Bearer` (API keys, SDKs) is unchanged. New `POST /auth/logout` clears the cookie. New settings: `SESSION_COOKIE_NAME`, `SESSION_COOKIE_DOMAIN`, `SESSION_COOKIE_SAMESITE`, `FRONTEND_URL`.

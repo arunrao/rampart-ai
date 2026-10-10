@@ -16,7 +16,7 @@ Data sources:
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -576,7 +576,9 @@ async def admin_users(
     active_expr = "k.is_active = 1" if sqlite else "k.is_active = TRUE"
     order = {"created_at": "u.created_at DESC", "cost_usd": "cost_usd DESC", "requests": "requests DESC", "last_seen": "last_seen DESC"}[sort]
 
-    where, params, count_params = "", {"limit": limit, "offset": offset}, {}
+    where = ""
+    params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    count_params: Dict[str, Any] = {}
     if search:
         where = "WHERE LOWER(u.email) LIKE :search"
         params["search"] = count_params["search"] = f"%{search.lower()}%"

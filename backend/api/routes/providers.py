@@ -9,10 +9,13 @@ from uuid import UUID
 from enum import Enum
 import logging
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from api.routes.auth import get_current_user, TokenData
 from api.security.crypto import encrypt_api_key, decrypt_api_key, mask_api_key, validate_api_key_format
-from api.db import get_conn
-from sqlalchemy import text
+from api.db import get_db, get_session
+from api.models import ProviderKey
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -59,79 +62,64 @@ class ProviderKeysListResponse(BaseModel):
     keys: List[ProviderKeyResponse]
 
 
+def _to_response(key: ProviderKey) -> ProviderKeyResponse:
+    return ProviderKeyResponse(
+        id=key.id,
+        provider=ProviderType(key.provider),
+        masked_key=mask_api_key(key.last_4, key.provider),
+        last_4=key.last_4,
+        status=ProviderKeyStatus(key.status),
+        created_at=key.created_at,
+        updated_at=key.updated_at,
+    )
+
+
+def _user_key_stmt(user_id: UUID, provider: str):
+    return select(ProviderKey).where(ProviderKey.user_id == user_id, ProviderKey.provider == provider)
+
+
 @router.get("/providers/keys", response_model=ProviderKeysListResponse)
-async def list_provider_keys(current_user: TokenData = Depends(get_current_user)):
+async def list_provider_keys(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     List all provider API keys for the current user (masked).
     Requires authentication.
     """
-    with get_conn() as conn:
-        results = conn.execute(
-            text("""
-                SELECT id, provider, last_4, status, created_at, updated_at
-                FROM provider_keys
-                WHERE user_id = :user_id
-                ORDER BY created_at DESC
-            """),
-            {"user_id": str(current_user.user_id)}
-        ).fetchall()
-        
-        keys = []
-        for row in results:
-            keys.append(ProviderKeyResponse(
-                id=row[0],
-                provider=ProviderType(row[1]),
-                masked_key=mask_api_key(row[2], row[1]),
-                last_4=row[2],
-                status=ProviderKeyStatus(row[3]),
-                created_at=row[4],
-                updated_at=row[5]
-            ))
-        
-        return ProviderKeysListResponse(keys=keys)
+    keys = db.scalars(
+        select(ProviderKey)
+        .where(ProviderKey.user_id == current_user.user_id)
+        .order_by(ProviderKey.created_at.desc())
+    ).all()
+    return ProviderKeysListResponse(keys=[_to_response(k) for k in keys])
 
 
 @router.get("/providers/keys/{provider}", response_model=ProviderKeyResponse)
 async def get_provider_key(
     provider: ProviderType,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get a specific provider API key (masked).
     Requires authentication.
     """
-    with get_conn() as conn:
-        result = conn.execute(
-            text("""
-                SELECT id, provider, last_4, status, created_at, updated_at
-                FROM provider_keys
-                WHERE user_id = :user_id AND provider = :provider
-            """),
-            {"user_id": str(current_user.user_id), "provider": provider.value}
-        ).fetchone()
-        
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No {provider.value} key found"
-            )
-        
-        return ProviderKeyResponse(
-            id=result[0],
-            provider=ProviderType(result[1]),
-            masked_key=mask_api_key(result[2], result[1]),
-            last_4=result[2],
-            status=ProviderKeyStatus(result[3]),
-            created_at=result[4],
-            updated_at=result[5]
+    key = db.scalars(_user_key_stmt(current_user.user_id, provider.value)).first()
+    if key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No {provider.value} key found"
         )
+    return _to_response(key)
 
 
 @router.put("/providers/keys/{provider}", response_model=ProviderKeyResponse, status_code=status.HTTP_200_OK)
 async def set_provider_key(
     provider: ProviderType,
     request: SetProviderKeyRequest,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Set or update a provider API key.
@@ -155,101 +143,37 @@ async def set_provider_key(
         )
     
     # Store or update in database
-    with get_conn() as conn:
-        # Check if key already exists
-        existing = conn.execute(
-            text("""
-                SELECT id FROM provider_keys
-                WHERE user_id = :user_id AND provider = :provider
-            """),
-            {"user_id": str(current_user.user_id), "provider": provider.value}
-        ).fetchone()
-        
-        if existing:
-            # Update existing key
-            result = conn.execute(
-                text("""
-                    UPDATE provider_keys
-                    SET key_encrypted = :key_encrypted,
-                        last_4 = :last_4,
-                        status = 'active',
-                        updated_at = :now
-                    WHERE user_id = :user_id AND provider = :provider
-                    RETURNING id, provider, last_4, status, created_at, updated_at
-                """),
-                {
-                    "user_id": str(current_user.user_id),
-                    "provider": provider.value,
-                    "key_encrypted": encrypted_key,
-                    "last_4": last_4,
-                    "now": datetime.utcnow()
-                }
-            )
-        else:
-            # Insert new key
-            result = conn.execute(
-                text("""
-                    INSERT INTO provider_keys (user_id, provider, key_encrypted, last_4, status, created_at, updated_at)
-                    VALUES (:user_id, :provider, :key_encrypted, :last_4, 'active', :now, :now)
-                    RETURNING id, provider, last_4, status, created_at, updated_at
-                """),
-                {
-                    "user_id": str(current_user.user_id),
-                    "provider": provider.value,
-                    "key_encrypted": encrypted_key,
-                    "last_4": last_4,
-                    "now": datetime.utcnow()
-                }
-            )
-        
-        row = result.fetchone()
-        conn.commit()
-
-        if row is None:
-            # RETURNING produced nothing: the UPDATE matched no row (key removed concurrently)
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"{provider.value} key changed concurrently; please retry"
-            )
-
-        return ProviderKeyResponse(
-            id=row[0],
-            provider=ProviderType(row[1]),
-            masked_key=mask_api_key(row[2], row[1]),
-            last_4=row[2],
-            status=ProviderKeyStatus(row[3]),
-            created_at=row[4],
-            updated_at=row[5]
-        )
+    key = db.scalars(_user_key_stmt(current_user.user_id, provider.value)).first()
+    if key is None:
+        key = ProviderKey(user_id=current_user.user_id, provider=provider.value)
+        db.add(key)
+    key.key_encrypted = encrypted_key
+    key.last_4 = last_4
+    key.status = ProviderKeyStatus.ACTIVE.value
+    key.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(key)
+    return _to_response(key)
 
 
 @router.delete("/providers/keys/{provider}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_provider_key(
     provider: ProviderType,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Delete (revoke) a provider API key.
     Requires authentication.
     """
-    with get_conn() as conn:
-        result = conn.execute(
-            text("""
-                DELETE FROM provider_keys
-                WHERE user_id = :user_id AND provider = :provider
-                RETURNING id
-            """),
-            {"user_id": str(current_user.user_id), "provider": provider.value}
+    key = db.scalars(_user_key_stmt(current_user.user_id, provider.value)).first()
+    if key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No {provider.value} key found"
         )
-        deleted = result.fetchone()
-        conn.commit()
-
-        if not deleted:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No {provider.value} key found"
-            )
-    
+    db.delete(key)
+    db.commit()
     return None
 
 
@@ -264,7 +188,7 @@ async def list_supported_providers():
             {
                 "id": ProviderType.OPENAI.value,
                 "name": "OpenAI",
-                "description": "OpenAI GPT models (GPT-4, GPT-3.5, etc.)",
+                "description": "OpenAI GPT models (GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna, etc.)",
                 "key_format": "sk-...",
                 "docs_url": "https://platform.openai.com/api-keys"
             },
@@ -286,26 +210,22 @@ def get_user_provider_key(user_id: UUID, provider: str) -> Optional[str]:
     Returns None if not found.
     Internal use only - not exposed as endpoint.
     """
-    with get_conn() as conn:
-        result = conn.execute(
-            text("""
-                SELECT key_encrypted
-                FROM provider_keys
-                WHERE user_id = :user_id AND provider = :provider AND status = 'active'
-            """),
-            {"user_id": str(user_id), "provider": provider}
-        ).fetchone()
-        
-        if not result:
-            return None
-        
-        try:
-            return decrypt_api_key(result[0])
-        except Exception as e:
-            # Surface this: a silent None here makes the LLM proxy fall back to the
-            # operator's system key, billing the user's traffic to the platform.
-            logger.error(
-                "Failed to decrypt %s provider key for user %s (KEY_ENCRYPTION_SECRET rotated?): %s",
-                provider, user_id, type(e).__name__,
-            )
-            raise ProviderKeyDecryptionError(provider) from e
+    with get_session() as db:
+        encrypted = db.scalars(
+            _user_key_stmt(user_id, provider).where(ProviderKey.status == ProviderKeyStatus.ACTIVE.value)
+        ).first()
+        key_encrypted = encrypted.key_encrypted if encrypted else None
+
+    if key_encrypted is None:
+        return None
+
+    try:
+        return decrypt_api_key(key_encrypted)
+    except Exception as e:
+        # Surface this: a silent None here makes the LLM proxy fall back to the
+        # operator's system key, billing the user's traffic to the platform.
+        logger.error(
+            "Failed to decrypt %s provider key for user %s (KEY_ENCRYPTION_SECRET rotated?): %s",
+            provider, user_id, type(e).__name__,
+        )
+        raise ProviderKeyDecryptionError(provider) from e

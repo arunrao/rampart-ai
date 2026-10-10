@@ -37,6 +37,37 @@ _detector_lock = threading.Lock()
 _exfiltration_monitor = None
 
 
+def _build_arbiter():
+    """LLM arbiter for the FLAG/BLOCK band; None unless explicitly enabled in settings."""
+    from api.config import get_settings
+
+    s = get_settings()
+    if not s.prompt_injection_arbiter_enabled:
+        return None
+    from models.injection_arbiter import InjectionArbiter
+
+    # Fail loudly here rather than letting every arbiter call degrade into a swallowed
+    # warning: an operator who enabled the arbiter should learn at startup that it can't run.
+    provider = s.prompt_injection_arbiter_provider
+    if provider not in ("openai", "anthropic"):
+        raise RuntimeError(f"PROMPT_INJECTION_ARBITER_PROVIDER must be openai or anthropic, got {provider!r}")
+    api_key = s.anthropic_api_key if provider == "anthropic" else s.openai_api_key
+    if not api_key:
+        raise RuntimeError(
+            f"PROMPT_INJECTION_ARBITER_ENABLED=true but {provider.upper()}_API_KEY is not set"
+        )
+    try:
+        __import__(provider)
+    except ImportError as e:
+        raise RuntimeError(f"PROMPT_INJECTION_ARBITER_ENABLED=true but the '{provider}' SDK is not installed") from e
+
+    return InjectionArbiter(
+        provider=s.prompt_injection_arbiter_provider,
+        model=s.prompt_injection_arbiter_model,
+        min_confidence=s.prompt_injection_arbiter_min_confidence,
+    )
+
+
 def get_detector() -> PromptInjectionDetectorLike:
     """Get or create detector instance"""
     global _detector
@@ -45,9 +76,11 @@ def get_detector() -> PromptInjectionDetectorLike:
             if _detector is None:
                 detector_type = os.getenv("PROMPT_INJECTION_DETECTOR", "hybrid")
                 use_onnx = os.getenv("PROMPT_INJECTION_USE_ONNX", "true").lower() == "true"
+                kwargs = {"arbiter": _build_arbiter()} if detector_type == "hybrid" else {}
                 _detector = get_prompt_injection_detector(
                     detector_type=detector_type,
-                    use_onnx=use_onnx
+                    use_onnx=use_onnx,
+                    **kwargs,
                 )
                 logger.info(f"✓ Security detector initialized: {detector_type}")
     return _detector
@@ -194,46 +227,37 @@ def analyze_prompt_injection(content: str, fast_mode: bool = False) -> Optional[
         # Use hybrid detector (regex + DeBERTa)
         result = detector.detect(content, fast_mode=fast_mode)
         
-        # Extract risk score and confidence
-        confidence = result.get("confidence", result.get("risk_score", 0.0))
-        is_injection = result.get("is_injection", False)
-        
-        if is_injection:
-            # Map confidence to severity
-            if confidence >= 0.9:
-                severity = SeverityLevel.CRITICAL
-            elif confidence >= 0.75:
-                severity = SeverityLevel.HIGH
-            elif confidence >= 0.5:
-                severity = SeverityLevel.MEDIUM
-            else:
-                severity = SeverityLevel.LOW
-            
-            # Extract indicators
-            indicators = []
-            if "detected_patterns" in result:
-                indicators = [p["name"] for p in result["detected_patterns"]]
-            elif "detection_details" in result:
-                details = result["detection_details"]
-                if "regex" in details:
-                    indicators = [p["name"] for p in details["regex"].get("detected_patterns", [])]
-            
-            # Get recommendation
-            recommendation = result.get("recommendation", "BLOCK")
-            action = "block" if "BLOCK" in recommendation else "flag"
-            
-            # Build description
+        confidence = float(result.get("score", result.get("confidence", 0.0)))
+        verdict = result.get("verdict")
+        degraded = bool(result.get("degraded", False))
+
+        if verdict == "unavailable":
+            # Fail closed: the scanner could not fully run, so report that rather than "safe".
+            return ThreatDetection(
+                threat_type=ThreatType.PROMPT_INJECTION,
+                severity=SeverityLevel.MEDIUM,
+                confidence=0.5,
+                description=f"Prompt injection scan unavailable ({result.get('degraded_reason') or 'degraded'})",
+                indicators=["scan_unavailable"],
+                recommended_action="flag",
+            )
+
+        if verdict in ("flag", "block"):
+            severity = SeverityLevel.CRITICAL if verdict == "block" else SeverityLevel.HIGH
+            indicators = sorted({r["code"] for r in result.get("reasons", [])})
             detector_used = result.get("detector", "unknown")
             latency = result.get("latency_ms", 0.0)
-            description = f"Prompt injection detected ({detector_used}, {confidence:.1%} confidence, {latency:.1f}ms)"
-            
+            description = (
+                f"Prompt injection {verdict} ({detector_used}, score {confidence:.2f}, {latency:.1f}ms"
+                f"{', degraded' if degraded else ''})"
+            )
             return ThreatDetection(
                 threat_type=ThreatType.PROMPT_INJECTION,
                 severity=severity,
-                confidence=confidence,
+                confidence=max(confidence, 0.75 if verdict == "flag" else 0.9),
                 description=description,
-                indicators=indicators or ["prompt_injection_pattern"],
-                recommended_action=action
+                indicators=indicators or ["deberta_injection"],
+                recommended_action=verdict,
             )
     
     except Exception as e:

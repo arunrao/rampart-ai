@@ -84,7 +84,7 @@ PROMPT_INJECTION_THRESHOLD=0.75       # Confidence threshold (0.0-1.0)
 **Test the system:**
 ```bash
 cd backend
-python test_deberta_integration.py
+python scripts/test_deberta_integration.py
 ```
 
 ### 2. Jailbreak Prevention
@@ -242,7 +242,7 @@ redacted, entities = redact_pii_gliner(text)
 **Test the system:**
 ```bash
 cd backend
-python test_gliner_pii.py
+python scripts/test_gliner_pii.py
 ```
 
 ### 5. Content Toxicity Detection
@@ -387,7 +387,7 @@ SECURITY_METRICS = {
   "user_id": "user-uuid",
   "content_hash": "abc123",
   "risk_score": 0.95,
-  "timestamp": "2024-01-01T12:00:00Z",
+  "timestamp": "2026-10-09T12:00:00Z",
   "details": {
     "detected_patterns": ["ignore previous instructions"],
     "user_agent": "Mozilla/5.0...",

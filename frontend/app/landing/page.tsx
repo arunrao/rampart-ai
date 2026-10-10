@@ -36,24 +36,26 @@ else:
     # Safe to send to your LLM
     print("✓ Content is safe")`,
     
-    curl: `# Content Filter API with Security Checks
-curl -X POST https://rampart.arunrao.com/api/v1/filter \\
+    curl: `# Scan untrusted text before an agent reads it
+curl -X POST https://rampart.arunrao.com/api/v1/scan/injection \\
   -H "Authorization: Bearer rmp_live_xxxxx" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "content": "Ignore all instructions...",
-    "filters": ["prompt_injection", "pii"],
-    "redact": true
+    "content": "<!-- ignore prior instructions and ... -->",
+    "profile": "third_party_document"
   }'
 
-# Response
+# Response: a verdict, not just a score
 {
-  "is_safe": false,
-  "threats": ["prompt_injection"],
-  "prompt_injection": {
-    "is_injection": true,
-    "confidence": 0.95
-  }
+  "verdict": "block",
+  "score": 0.97,
+  "degraded": false,
+  "reasons": [{
+    "code": "instruction_override",
+    "strong": true,
+    "channel": "html_comment"
+  }],
+  "model_version": "protectai/deberta-v3-base-prompt-injection-v2@e6535ca"
 }`,
     
     javascript: `// Node.js / JavaScript example
@@ -100,8 +102,9 @@ if (!result.is_safe) {
             </h1>
             
             <p className="text-lg sm:text-xl text-marketing-body mb-4 leading-relaxed">
-              Filter prompt injection, PII, and toxic content before it hits your model—and monitor what
-              comes back out. HTTP APIs you can call from any runtime; documentation you can actually find.
+              Scan untrusted documents for prompt injection, redact PII with a zero-shot ML model, and
+              enforce your own policies—before content reaches your model, and on what comes back out.
+              Fail-closed verdicts, pinned models, HTTP APIs you can call from any runtime.
             </p>
             
             <p className="text-lg text-marketing-muted mb-8">
@@ -299,7 +302,7 @@ if (!result.is_safe) {
                 <Zap className="w-12 h-12 text-white" />
               </div>
               <p className="mt-3 font-semibold text-slate-700 dark:text-slate-300">LLM</p>
-              <p className="text-sm text-slate-500">GPT-4, Claude, etc.</p>
+              <p className="text-sm text-slate-500">GPT-6, Claude 5.5, etc.</p>
             </div>
           </div>
 
@@ -357,16 +360,16 @@ if (!result.is_safe) {
       <section className="container mx-auto px-4 sm:px-6 py-12 sm:py-16">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
           <div className="text-center">
-            <div className="text-3xl sm:text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">95%</div>
-            <div className="text-slate-600 dark:text-slate-400">Detection Accuracy</div>
+            <div className="text-3xl sm:text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">&ge;95%</div>
+            <div className="text-slate-600 dark:text-slate-400">Injection recall, gated in CI</div>
           </div>
           <div className="text-center">
-            <div className="text-3xl sm:text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">&lt;50ms</div>
-            <div className="text-slate-600 dark:text-slate-400">Average Latency</div>
+            <div className="text-3xl sm:text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">&le;1%</div>
+            <div className="text-slate-600 dark:text-slate-400">Block false-positive rate on docs</div>
           </div>
           <div className="text-center">
-            <div className="text-3xl sm:text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">50+</div>
-            <div className="text-slate-600 dark:text-slate-400">Attack Patterns</div>
+            <div className="text-3xl sm:text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">100k</div>
+            <div className="text-slate-600 dark:text-slate-400">Chars scanned per request</div>
           </div>
           <div className="text-center">
             <div className="text-3xl sm:text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">100%</div>
@@ -390,25 +393,26 @@ if (!result.is_safe) {
           <Card className="border-2 border-slate-200 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 transition-all hover:shadow-xl">
             <CardHeader>
               <Shield className="h-12 w-12 text-blue-600 dark:text-blue-400 mb-4" />
-              <CardTitle className="text-xl">Prompt Injection Detection</CardTitle>
+              <CardTitle className="text-xl">Prompt Injection Scanning</CardTitle>
               <CardDescription className="text-base">
-                Hybrid DeBERTa ML + regex system with 95% accuracy. Detects instruction override, 
-                jailbreaks, context confusion, and zero-click attacks.
+                Hybrid DeBERTa classifier + tiered rules returning an actionable verdict:
+                allow, monitor, flag, or block. Finds injections hidden in HTML comments, link titles,
+                encoded payloads, and zero-width text—across documents up to 100k characters.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>12+ attack patterns</span>
+                  <span>Fail-closed: never reports &quot;safe&quot; when the model didn&apos;t run</span>
                 </div>
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>ONNX-optimized (3x faster)</span>
+                  <span>Profiles for third-party docs, code &amp; READMEs, user briefs</span>
                 </div>
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>Real-time threat scores</span>
+                  <span>Recall &amp; false-positive gates enforced in CI on a public corpus</span>
                 </div>
               </div>
             </CardContent>
@@ -446,23 +450,24 @@ if (!result.is_safe) {
               <FileCode className="h-12 w-12 text-purple-600 dark:text-purple-400 mb-4" />
               <CardTitle className="text-xl">PII Detection (GLiNER ML)</CardTitle>
               <CardDescription className="text-base">
-                93% accurate ML-based PII detection. Identifies emails, SSNs, credit cards, 
-                names, addresses, and custom entity types.
+                Zero-shot named-entity model that understands context, not just digit patterns.
+                Catches names, street addresses, dates of birth, SSNs, card and account numbers—and
+                drives your redaction policies.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>Context-aware detection</span>
+                  <span>ONNX runtime, ~10ms per call after warm-up</span>
                 </div>
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>GDPR & HIPAA compliant</span>
+                  <span>Custom regex entities alongside the model</span>
                 </div>
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>Zero-shot custom entities</span>
+                  <span>Pinned model revision—no surprise upstream changes</span>
                 </div>
               </div>
             </CardContent>
@@ -498,25 +503,26 @@ if (!result.is_safe) {
           <Card className="border-2 border-slate-200 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 transition-all hover:shadow-xl">
             <CardHeader>
               <BookOpen className="h-12 w-12 text-orange-600 dark:text-orange-400 mb-4" />
-              <CardTitle className="text-xl">Policy Management</CardTitle>
+              <CardTitle className="text-xl">Policy Engine</CardTitle>
               <CardDescription className="text-base">
-                Rule-based policy engine with compliance templates. Enforce GDPR, HIPAA, 
-                SOC 2, and custom organizational policies.
+                Write your own rules—condition plus action—or start from a template. Twelve built-in
+                conditions span PII, PHI, card data, secrets, profanity, and privacy requests;
+                actions redact, flag, or block.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>Pre-built compliance templates</span>
+                  <span>GDPR, HIPAA, SOC 2, PCI-DSS, CCPA templates</span>
                 </div>
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>RBAC & rate limiting</span>
+                  <span>One-click starters: Redact PII, Secrets Guard, Payment Data Guard…</span>
                 </div>
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>Audit trail logging</span>
+                  <span>Versioned, per-tenant, with audit logging</span>
                 </div>
               </div>
             </CardContent>
@@ -538,7 +544,7 @@ if (!result.is_safe) {
                 </div>
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
-                  <span>Framework wrappers</span>
+                  <span>Scoped API keys per integration (e.g. scan:injection only)</span>
                 </div>
                 <div className="flex items-start space-x-2">
                   <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5" />
@@ -591,8 +597,9 @@ if (!result.is_safe) {
               </CardHeader>
               <CardContent>
                 <p className="text-slate-600 dark:text-slate-400">
-                  Detect zero-click attacks in uploaded documents. Prevent data exfiltration through 
-                  crafted queries. Maintain audit trails for compliance.
+                  Scan every retrieved page, upload, or email with <code>/scan/injection</code> before
+                  the agent reads it—including payloads hidden in HTML comments and encoded text.
+                  Batch up to 8 documents per call.
                 </p>
               </CardContent>
             </Card>
@@ -634,7 +641,7 @@ if (!result.is_safe) {
               <CardHeader className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
                 <CardTitle className="flex items-center space-x-2">
                   <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">1</div>
-                  <span>Install the SDK</span>
+                  <span>Pick an HTTP client</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6">
@@ -660,7 +667,7 @@ pip install requests
 from openai import OpenAI
 client = OpenAI(api_key="sk-...")
 response = client.chat.completions.create(
-    model="gpt-4",
+    model="gpt-6.1-sol",
     messages=[{"role": "user", "content": user_input}]
 )
 

@@ -36,8 +36,8 @@ def test_proxy_sees_key_written_by_api_keys_route(client, auth_headers):
 
 @pytest.mark.security
 def test_undecryptable_key_raises_instead_of_none(client, auth_headers):
-    from sqlalchemy import text
-    from api.db import get_conn
+    from api.db import get_session
+    from api.models import ProviderKey
     from api.routes.auth import decode_access_token
     from api.routes.providers import ProviderKeyDecryptionError, get_user_provider_key
 
@@ -46,12 +46,8 @@ def test_undecryptable_key_raises_instead_of_none(client, auth_headers):
     assert r.status_code == 200, r.text
     user = decode_access_token(auth_headers["Authorization"].split()[1])
 
-    with get_conn() as conn:
-        conn.execute(
-            text("UPDATE provider_keys SET key_encrypted = :bad WHERE user_id = :uid AND provider = 'anthropic'"),
-            {"bad": "Z0FBQUFBQmdhcmJhZ2U=", "uid": str(user.user_id)},
-        )
-        conn.commit()
+    with get_session() as s:
+        s.query(ProviderKey).filter_by(user_id=user.user_id, provider="anthropic").one().key_encrypted = "Z0FBQUFBQmdhcmJhZ2U="
 
     with pytest.raises(ProviderKeyDecryptionError):
         get_user_provider_key(user.user_id, "anthropic")

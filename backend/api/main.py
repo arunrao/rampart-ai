@@ -10,8 +10,8 @@ import logging
 from typing import Any, Callable, Optional
 
 from api.config import get_settings
-from api.routes import health, auth, providers, traces, security, policies, content_filter, test_scenarios, api_keys, rampart_keys, admin
-from api.db import init_defaults_table, init_all_tables
+from api.routes import health, auth, providers, traces, security, policies, content_filter, test_scenarios, api_keys, rampart_keys, admin, scan
+from api.db import DATABASE_URL, init_defaults_table, init_all_tables
 from api.middleware import (
     SecurityHeadersMiddleware,
     RateLimitMiddleware,
@@ -156,12 +156,18 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
 
-    # Initialize database synchronously (fast, must complete before serving)
-    try:
-        init_all_tables()
-        logger.info("✓ Database tables initialized")
-    except Exception as e:
-        logger.warning(f"Failed to init database tables: {e}")
+    # Misconfigured optional components must stop startup, not degrade silently later.
+    from api.routes.security import _build_arbiter
+    _build_arbiter()  # raises RuntimeError if enabled without SDK/API key
+
+    # SQLite (dev/tests) is created from the legacy DDL; PostgreSQL is owned by Alembic
+    # (docker-entrypoint.sh runs `python -m api.migrate` before uvicorn starts).
+    if "sqlite" in DATABASE_URL.lower():
+        try:
+            init_all_tables()
+            logger.info("✓ Database tables initialized")
+        except Exception as e:
+            logger.warning(f"Failed to init database tables: {e}")
 
     # Load ML models in a background thread so the app starts accepting
     # requests (and ALB health checks) immediately.  API routes return a
@@ -289,6 +295,7 @@ app.include_router(traces.router, prefix=settings.api_prefix, tags=["observabili
 app.include_router(security.router, prefix=f"{settings.api_prefix}/security", tags=["security"])
 app.include_router(policies.router, prefix=settings.api_prefix, tags=["policies"])
 app.include_router(content_filter.router, prefix=settings.api_prefix, tags=["content-filter"])
+app.include_router(scan.router, prefix=settings.api_prefix, tags=["injection-scan"])
 app.include_router(test_scenarios.router, prefix=f"{settings.api_prefix}/test", tags=["testing"])
 app.include_router(api_keys.router, prefix=f"{settings.api_prefix}/api-keys", tags=["api-keys"])
 app.include_router(rampart_keys.router, prefix=settings.api_prefix, tags=["rampart-keys"])

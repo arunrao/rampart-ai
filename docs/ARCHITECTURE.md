@@ -356,7 +356,7 @@ Wraps LLM API calls with security and observability:
 1. Application → LLM Proxy
    {
      messages: [...],
-     model: "gpt-4",
+     model: "gpt-6.1-sol",
      user_id: "user123"
    }
 

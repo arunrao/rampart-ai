@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     
     # Application
     app_name: str = "Project Rampart"
-    app_version: str = "0.2.6"
+    app_version: str = "0.3.0"
     environment: str = "development"
     debug: bool = False
     secret_key: str = Field(default="")
@@ -68,6 +68,16 @@ class Settings(BaseSettings):
     prompt_injection_use_onnx: bool = True  # Use ONNX optimization for 3x faster inference
     prompt_injection_fast_mode: bool = False  # Skip DeBERTa for low-latency
     prompt_injection_threshold: float = 0.75  # Confidence threshold for blocking
+    # Default source profile for /filter and /scan/injection when the caller omits one
+    # (third_party_document | user_brief | code_docs). See models/injection_policy.py.
+    prompt_injection_default_profile: str = "third_party_document"
+    # Optional LLM arbiter for the FLAG/BLOCK band. Off by default; can only move BLOCK -> FLAG.
+    prompt_injection_arbiter_enabled: bool = False
+    prompt_injection_arbiter_provider: str = "openai"  # openai | anthropic
+    prompt_injection_arbiter_model: Optional[str] = None
+    prompt_injection_arbiter_min_confidence: float = 0.8
+    # POST /scan/injection/batch accepts at most this many documents per request
+    scan_injection_batch_max: int = 8
     # When True (default), PII / toxicity / prompt-injection work runs concurrently (lower wall time).
     content_filter_parallel_ml: bool = True
     # Unauthenticated playground for marketing demos. Off by default: it exposes ML

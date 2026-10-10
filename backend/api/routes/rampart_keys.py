@@ -120,7 +120,7 @@ async def create_rampart_api_key(
     # Validate permissions
     valid_permissions = {
         'security:analyze', 'security:batch', 'filter:pii', 'filter:toxicity',
-        'llm:chat', 'llm:stream', 'analytics:read', 'test:run'
+        'scan:injection', 'llm:chat', 'llm:stream', 'analytics:read', 'test:run'
     }
     
     invalid_perms = set(request.permissions) - valid_permissions
@@ -173,7 +173,7 @@ async def create_rampart_api_key(
                 "key_prefix": key_prefix,
                 "key_hash": key_hash,
                 "key_preview": key_preview,
-                "permissions": request.permissions,
+                "permissions": json.dumps(request.permissions),
                 "rate_limit_per_minute": request.rate_limit_per_minute,
                 "rate_limit_per_hour": request.rate_limit_per_hour,
                 "expires_at": expires_at,
@@ -455,7 +455,7 @@ async def set_template_pack(
 
 
 def _parse_permissions(value) -> set[str]:
-    """Permissions are a TEXT[] on PostgreSQL and a JSON string on SQLite."""
+    """Permissions are a JSON array: native list on PostgreSQL (JSONB), JSON string on SQLite."""
     if not value:
         return set()
     if isinstance(value, str):

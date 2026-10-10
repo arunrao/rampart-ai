@@ -3,8 +3,9 @@
 Check API keys and usage for arunrao@gmail.com
 """
 import sys
+from pathlib import Path
 import os
-sys.path.append('/app')
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/
 
 from api.db import get_conn
 from sqlalchemy import text

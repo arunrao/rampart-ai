@@ -15,9 +15,12 @@ import bcrypt
 import httpx
 from urllib.parse import urlencode, urlsplit
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from api.config import get_settings
-from api.db import get_conn
-from sqlalchemy import text
+from api.db import get_db, get_session
+from api.models import User
 
 router = APIRouter()
 # auto_error=False: a missing header is fine when the session cookie is present
@@ -169,14 +172,21 @@ def create_access_token(user_id: UUID, email: str) -> str:
     return token
 
 
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        created_at=user.created_at,
+        is_active=user.is_active,
+        is_super_admin=is_super_admin_email(user.email),
+    )
+
+
 def _ensure_user_active(user_id: UUID) -> None:
     """Reject tokens for users that no longer exist or have been deactivated."""
-    with get_conn() as conn:
-        row = conn.execute(
-            text("SELECT is_active FROM users WHERE id = :user_id"),
-            {"user_id": str(user_id)},
-        ).fetchone()
-    if not row or not row[0]:
+    with get_session() as db:
+        active = db.scalar(select(User.is_active).where(User.id == user_id))
+    if not active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is inactive or does not exist"
@@ -231,71 +241,46 @@ async def get_current_user(
 
 
 @router.get("/auth/me", response_model=UserResponse)
-async def get_current_user_info(current_user: TokenData = Depends(get_current_user)):
+async def get_current_user_info(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Get current user information from JWT token.
     Requires authentication.
     """
-    with get_conn() as conn:
-        result = conn.execute(
-            text("""
-                SELECT id, email, created_at, is_active
-                FROM users
-                WHERE id = :user_id
-            """),
-            {"user_id": str(current_user.user_id)}
-        ).fetchone()
-        
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        return UserResponse(
-            id=result[0],
-            email=result[1],
-            created_at=result[2],
-            is_active=result[3],
-            is_super_admin=is_super_admin_email(result[1]),
+    user = db.get(User, current_user.user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
         )
+    return _user_response(user)
 
 
 @router.post("/auth/refresh", response_model=AuthResponse)
-async def refresh_token(response: Response, current_user: TokenData = Depends(get_current_user)):
+async def refresh_token(
+    response: Response,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Refresh JWT token.
     Requires valid (not expired) token. Also rotates the session cookie.
     """
     # Get fresh user data
-    with get_conn() as conn:
-        result = conn.execute(
-            text("""
-                SELECT id, email, created_at, is_active
-                FROM users
-                WHERE id = :user_id
-            """),
-            {"user_id": str(current_user.user_id)}
-        ).fetchone()
-        
-        if not result or not result[3]:  # Check is_active
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account is inactive"
-            )
-        
-        user = UserResponse(
-            id=result[0],
-            email=result[1],
-            created_at=result[2],
-            is_active=result[3]
+    user = db.get(User, current_user.user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive"
         )
-        
-        # Create new token
-        token = create_access_token(user.id, user.email)
-        set_session_cookie(response, token)
-        
-        return AuthResponse(token=token, user=user)
+
+    # Create new token
+    token = create_access_token(user.id, user.email)
+    set_session_cookie(response, token)
+
+    return AuthResponse(token=token, user=_user_response(user))
 
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -422,63 +407,29 @@ async def google_callback(request: Request, code: str, state: Optional[str] = No
             )
     
     # Check if user exists, create if not
-    with get_conn() as conn:
-        existing = conn.execute(
-            text("SELECT id, email, created_at, is_active FROM users WHERE email = :email"),
-            {"email": email}
-        ).fetchone()
-        
-        if existing:
-            if not existing[3]:
+    with get_session() as db:
+        user = db.scalars(select(User).where(User.email == email)).first()
+        if user is not None:
+            if not user.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Account is inactive"
                 )
-            # User exists, log them in
-            user = UserResponse(
-                id=existing[0],
-                email=existing[1],
-                created_at=existing[2],
-                is_active=existing[3]
-            )
         else:
             # Create new user (no password needed for OAuth users)
             # Use a random hash as placeholder since password field is required
-            placeholder_hash = hash_password(bcrypt.gensalt().decode('utf-8'))
-            
-            result = conn.execute(
-                text("""
-                    INSERT INTO users (email, password_hash, created_at, updated_at)
-                    VALUES (:email, :password_hash, :now, :now)
-                    RETURNING id, email, created_at, is_active
-                """),
-                {
-                    "email": email,
-                    "password_hash": placeholder_hash,
-                    "now": datetime.utcnow()
-                }
-            )
-            conn.commit()
-            
-            user_row = result.fetchone()
-            if user_row is None:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to create user"
-                )
-            user = UserResponse(
-                id=user_row[0],
-                email=user_row[1],
-                created_at=user_row[2],
-                is_active=user_row[3]
-            )
-        
-        # Create JWT token
-        token = create_access_token(user.id, user.email)
-        
-        # The session lives in an HttpOnly cookie, so the token never touches the URL,
-        # browser history, or JavaScript-accessible storage (XSS cannot read it).
-        response = RedirectResponse(f"{settings.frontend_url}/auth/callback")
-        set_session_cookie(response, token)
-        response.delete_cookie(OAUTH_STATE_COOKIE, path=f"{settings.api_prefix}/auth")
-        return response
+            user = User(email=email, password_hash=hash_password(bcrypt.gensalt().decode('utf-8')))
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        user_id, user_email = user.id, user.email
+
+    # Create JWT token
+    token = create_access_token(user_id, user_email)
+
+    # The session lives in an HttpOnly cookie, so the token never touches the URL,
+    # browser history, or JavaScript-accessible storage (XSS cannot read it).
+    response = RedirectResponse(f"{settings.frontend_url}/auth/callback")
+    set_session_cookie(response, token)
+    response.delete_cookie(OAUTH_STATE_COOKIE, path=f"{settings.api_prefix}/auth")
+    return response

@@ -118,7 +118,7 @@ curl -X POST http://localhost:8000/api/v1/llm/complete \\
     "messages": [
       {"role": "user", "content": "What is AI security?"}
     ],
-    "model": "gpt-4",
+    "model": "gpt-6.1-sol",
     "temperature": 0.7,
     "user_id": "user_123"
   }'

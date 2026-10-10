@@ -1,0 +1,22 @@
+Alembic migrations for the Rampart backend (PostgreSQL).
+
+Deploy time
+-----------
+The backend image runs `python -m api.migrate` from docker-entrypoint.sh before
+uvicorn starts, so every `docker-compose up` / ECS task start brings the schema
+to head. It is idempotent, serialised with a Postgres advisory lock, and aborts
+startup if a migration fails. Set SKIP_DB_MIGRATE=1 to opt out.
+
+Databases created by the legacy api.db.init_*_table() DDL (no alembic_version
+table yet) are detected and stamped at the baseline revision automatically; no
+manual `alembic stamp` is needed.
+
+Manual use (from backend/, with DATABASE_URL set)
+-------------------------------------------------
+    python -m api.migrate            # upgrade to head
+    python -m api.migrate --check    # exit 1 if behind head
+    alembic revision --autogenerate -m "describe change"
+    alembic current / history / downgrade -1
+
+SQLite (local dev and the test suite) is created by api.db.init_all_tables() /
+create_all_tables(); the baseline revision also applies cleanly to SQLite.

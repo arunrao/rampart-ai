@@ -15,7 +15,7 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
-tests/.pytest_rampart.sqlite
+tests/.pytest_rampart.*.sqlite
 
 # Tests, tooling, docs
 tests/
@@ -26,3 +26,6 @@ Dockerfile*
 .gitignore
 .DS_Store
 *.log
+
+# Operator / dev scripts (token minting, demo seeding, model smoke tests) — never in the image
+scripts/

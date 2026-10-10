@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 from enum import Enum
 import re
 import os
+import hashlib
 import logging
 import asyncio
 
@@ -24,13 +25,23 @@ from api.routes.rampart_keys import track_api_key_usage, get_api_key_template_pa
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Pre-declare conditionally-imported names as `Any = None` so call sites type-check;
+# every use is guarded at runtime by the matching *_AVAILABLE / _OK / _READY flag.
+detect_pii_gliner: Any = None
+redact_pii_gliner: Any = None
+GLiNERPIIEntity: Any = None
+get_default: Any = None
+content_filter_defaults_key: Any = None
+_tracer: Any = None
+AnalyzerEngine: Any = None
+AnonymizerEngine: Any = None
+
 # Import GLiNER detector
 try:
     from models.pii_detector_gliner import detect_pii_gliner, redact_pii_gliner, PIIEntity as GLiNERPIIEntity
     GLINER_AVAILABLE = True
 except ImportError:
     GLINER_AVAILABLE = False
-    GLiNERPIIEntity = None
 
 # Import prompt injection detector
 try:
@@ -61,7 +72,6 @@ try:
     _tracer = otel_trace.get_tracer(__name__)
 except Exception:  # pragma: no cover
     _OTEL = False
-    _tracer = None
 
 # Optional Prometheus metrics
 try:
@@ -138,8 +148,18 @@ class PromptInjectionResult(BaseModel):
     is_injection: bool = Field(..., description="Whether prompt injection was detected")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Detection confidence score (0.0-1.0)")
     risk_score: float = Field(..., ge=0.0, le=1.0, description="Overall risk score (0.0-1.0)")
-    recommendation: str = Field(..., description="Recommended action: BLOCK, FLAG, MONITOR, or ALLOW")
+    recommendation: str = Field(..., description="Legacy human-readable string. Prefer `verdict`.")
     patterns_matched: List[str] = Field(default_factory=list, description="List of attack patterns detected (e.g., 'instruction_override', 'role_manipulation')")
+    # Stable machine-readable contract (mirrors POST /scan/injection)
+    verdict: Optional[str] = Field(default=None, description="allow | monitor | flag | block | unavailable")
+    score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    degraded: bool = Field(default=False, description="True if part of the scan did not run; never treat as safe")
+    degraded_reason: Optional[str] = None
+    reasons: List[Dict[str, Any]] = Field(default_factory=list, description="[{code, strong, tier, severity, channel, quoted, position}]")
+    chunks: Optional[Dict[str, Any]] = Field(default=None, description="{total, scanned, failed, flagged, spans[]}")
+    model_version: Optional[str] = None
+    policy_version: Optional[str] = None
+    profile: Optional[str] = None
 
 
 class ContentFilterRequest(BaseModel):
@@ -168,12 +188,21 @@ class ContentFilterRequest(BaseModel):
         default=False,
         description="If true, use Presidio analyzer/anonymizer for PII instead of regex"
     )
+    injection_profile: Optional[str] = Field(
+        default=None,
+        description="Prompt-injection source profile: third_party_document | user_brief | code_docs"
+    )
+    # Privacy controls. Defaults keep the historical behaviour of this endpoint;
+    # POST /scan/injection defaults both to false.
+    return_content: bool = Field(default=True, description="Echo original_content in the response")
+    store: bool = Field(default=True, description="Retain the result in memory for GET /filter/results/{id} and /filter/stats")
 
 
 class ContentFilterResponse(BaseModel):
     """Response from content filtering"""
     id: UUID
-    original_content: str
+    original_content: Optional[str] = None
+    content_sha256: Optional[str] = None
     filtered_content: Optional[str] = None
     pii_detected: List[PIIEntity] = []
     toxicity_scores: Optional[ToxicityScore] = None
@@ -612,15 +641,15 @@ async def _execute_filter_core(
                     dr = detector.detect(
                         request.content,
                         fast_mode=settings.prompt_injection_fast_mode,
+                        profile=request.injection_profile or settings.prompt_injection_default_profile,
                     )
-                    logger.debug(f"Detection result: {dr}")
                     return ("ok", dr)
                 except Exception as e:
                     logger.error(f"Prompt injection detection failed: {e}", exc_info=True)
                     return ("error", e)
 
             status, payload = await asyncio.to_thread(_pi_work)
-            if status == "ok" and payload is not None and _OTEL and pispan is not None:
+            if status == "ok" and isinstance(payload, dict) and _OTEL and pispan is not None:
                 try:
                     pispan.set_attribute("injection.detected", bool(payload["is_injection"]))
                     pispan.set_attribute("injection.confidence", float(payload["confidence"]))
@@ -672,48 +701,50 @@ async def _execute_filter_core(
                 #  - regex named patterns (e.g. "instruction_override")
                 #  - a "deberta_injection" sentinel when the ML model fires
                 #    but regex didn't name the pattern
-                _regex_patterns: List[str] = [
-                    p["name"]
-                    for p in detection_result.get("detection_details", {})
-                        .get("regex", {})
-                        .get("detected_patterns", [])
+                _reasons = detection_result.get("reasons") or [
+                    {"code": p.get("code", p.get("name")), **{k: p.get(k) for k in ("strong", "tier", "severity", "channel", "quoted", "position")}}
+                    for p in detection_result.get("detection_details", {}).get("regex", {}).get("detected_patterns", [])
                 ]
+                _patterns: List[str] = sorted({r["code"] for r in _reasons if r.get("code")})
                 _deberta = detection_result.get("deberta_result", {})
-                if _deberta.get("is_injection") and "deberta_injection" not in _regex_patterns:
-                    _regex_patterns.append("deberta_injection")
+                if _deberta.get("is_injection") and "deberta_injection" not in _patterns:
+                    _patterns.append("deberta_injection")
 
                 prompt_injection_result = PromptInjectionResult(
                     is_injection=detection_result["is_injection"],
                     confidence=detection_result["confidence"],
-                    risk_score=detection_result.get(
-                        "risk_score", detection_result["confidence"]
-                    ),
+                    risk_score=detection_result.get("risk_score", detection_result["confidence"]),
                     recommendation=detection_result["recommendation"],
-                    patterns_matched=_regex_patterns,
+                    patterns_matched=_patterns,
+                    verdict=detection_result.get("verdict"),
+                    score=detection_result.get("score", detection_result["confidence"]),
+                    degraded=bool(detection_result.get("degraded", False)),
+                    degraded_reason=detection_result.get("degraded_reason"),
+                    reasons=_reasons,
+                    chunks=detection_result.get("chunks"),
+                    model_version=detection_result.get("model_version"),
+                    policy_version=detection_result.get("policy_version"),
+                    profile=detection_result.get("profile"),
                 )
                 logger.info(
-                    f"Prompt injection check: is_injection={prompt_injection_result.is_injection}, "
-                    f"confidence={prompt_injection_result.confidence}"
-                )
-            elif status == "unavailable":
-                logger.warning(
-                    f"Prompt injection detector not available. "
-                    f"AVAILABLE={PROMPT_INJECTION_AVAILABLE}, get_detector={get_detector}"
-                )
-                prompt_injection_result = PromptInjectionResult(
-                    is_injection=False,
-                    confidence=0.0,
-                    risk_score=0.0,
-                    recommendation="UNAVAILABLE - Detector not loaded",
-                    patterns_matched=[],
+                    "Prompt injection check: verdict=%s score=%.3f degraded=%s",
+                    prompt_injection_result.verdict, prompt_injection_result.score or 0.0,
+                    prompt_injection_result.degraded,
                 )
             else:
+                # Detector missing or raised: fail closed with an explicit unavailable verdict.
+                reason = "detector_not_loaded" if status == "unavailable" else f"detector_exception:{type(payload).__name__}"
+                logger.warning("Prompt injection detector unavailable (%s)", reason)
                 prompt_injection_result = PromptInjectionResult(
                     is_injection=False,
                     confidence=0.0,
                     risk_score=0.0,
-                    recommendation="ERROR - Detection unavailable",
+                    recommendation="UNAVAILABLE - Detector degraded, treat as unscanned",
                     patterns_matched=[],
+                    verdict="unavailable",
+                    score=0.0,
+                    degraded=True,
+                    degraded_reason=reason,
                 )
 
     is_safe = True
@@ -721,7 +752,10 @@ async def _execute_filter_core(
         is_safe = False
     if toxicity_scores and toxicity_scores.toxicity > toxicity_threshold:
         is_safe = False
-    if prompt_injection_result and len(prompt_injection_result.patterns_matched) > 0:
+    if prompt_injection_result and (
+        prompt_injection_result.verdict in ("flag", "block", "unavailable")
+        or (prompt_injection_result.verdict is None and prompt_injection_result.patterns_matched)
+    ):
         is_safe = False
 
     processing_time = (time.time() - start_time) * 1000
@@ -750,7 +784,8 @@ async def _execute_filter_core(
     result_id = uuid4()
     response = ContentFilterResponse(
         id=result_id,
-        original_content=request.content,
+        original_content=request.content if request.return_content else None,
+        content_sha256=hashlib.sha256(request.content.encode("utf-8")).hexdigest(),
         filtered_content=filtered_content if filtered_content != request.content else None,
         pii_detected=pii_entities,
         toxicity_scores=toxicity_scores,
@@ -761,7 +796,7 @@ async def _execute_filter_core(
         processing_time_ms=round(processing_time, 2)
     )
 
-    if owner_user_id:
+    if owner_user_id and request.store:
         filter_results[result_id] = (owner_user_id, response)
 
     return response

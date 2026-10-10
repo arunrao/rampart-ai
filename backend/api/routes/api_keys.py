@@ -3,16 +3,19 @@ API key management endpoints - for OpenAI, Anthropic, etc.
 """
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List, Optional
 from datetime import datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 from enum import Enum
 import logging
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from api.routes.auth import get_current_user, TokenData
 from api.security.crypto import encrypt_api_key as _encrypt, decrypt_api_key as _decrypt
-from api.db import get_conn
-from sqlalchemy import text
+from api.db import get_db
+from api.models import ProviderKey
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -80,14 +83,29 @@ def validate_api_key_format(provider: ProviderType, api_key: str) -> bool:
     return False
 
 
+def _to_response(key: ProviderKey, name: Optional[str] = None) -> APIKeyResponse:
+    return APIKeyResponse(
+        id=key.id,
+        provider=ProviderType(key.provider),
+        name=name,  # We don't store name in DB currently
+        key_preview=f"...{key.last_4}",
+        created_at=key.created_at,
+        updated_at=key.updated_at,
+        is_valid=key.status == "active",
+    )
+
+
+def _user_key_stmt(user_id: UUID, provider: str):
+    return select(ProviderKey).where(ProviderKey.user_id == user_id, ProviderKey.provider == provider)
+
+
 @router.post("/keys", response_model=APIKeyResponse)
 async def create_api_key(
     request: APIKeyCreate,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Create or update an API key for a provider"""
-    user_id = str(current_user.user_id)
-    
     # Validate key format
     if not validate_api_key_format(request.provider, request.api_key):
         raise HTTPException(
@@ -98,155 +116,59 @@ async def create_api_key(
     # Encrypt the API key
     encrypted_key = encrypt_api_key(request.api_key)
     last_4 = request.api_key[-4:] if len(request.api_key) >= 4 else "****"
-    now = datetime.utcnow()
-    
-    with get_conn() as conn:
-        # Check if key for this provider already exists
-        existing = conn.execute(
-            text("""
-                SELECT id FROM provider_keys 
-                WHERE user_id = :user_id AND provider = :provider
-            """),
-            {"user_id": user_id, "provider": request.provider.value}
-        ).fetchone()
-        
-        if existing:
-            # Update existing key
-            conn.execute(
-                text("""
-                    UPDATE provider_keys 
-                    SET key_encrypted = :key_encrypted,
-                        last_4 = :last_4,
-                        status = 'active',
-                        updated_at = :updated_at
-                    WHERE user_id = :user_id AND provider = :provider
-                """),
-                {
-                    "key_encrypted": encrypted_key,
-                    "last_4": last_4,
-                    "updated_at": now,
-                    "user_id": user_id,
-                    "provider": request.provider.value
-                }
-            )
-            key_id = UUID(str(existing[0]))
-        else:
-            # Create new key
-            key_id = uuid4()
-            conn.execute(
-                text("""
-                    INSERT INTO provider_keys 
-                    (id, user_id, provider, key_encrypted, last_4, status, created_at, updated_at)
-                    VALUES (:id, :user_id, :provider, :key_encrypted, :last_4, 'active', :created_at, :updated_at)
-                """),
-                {
-                    "id": str(key_id),
-                    "user_id": user_id,
-                    "provider": request.provider.value,
-                    "key_encrypted": encrypted_key,
-                    "last_4": last_4,
-                    "created_at": now,
-                    "updated_at": now
-                }
-            )
-        
-        conn.commit()
-    
-    return APIKeyResponse(
-        id=key_id,
-        provider=request.provider,
-        name=request.name,
-        key_preview=mask_api_key(request.api_key),
-        created_at=now,
-        updated_at=now,
-        is_valid=True
-    )
+
+    key = db.scalars(_user_key_stmt(current_user.user_id, request.provider.value)).first()
+    if key is None:
+        key = ProviderKey(user_id=current_user.user_id, provider=request.provider.value)
+        db.add(key)
+    key.key_encrypted = encrypted_key
+    key.last_4 = last_4
+    key.status = "active"
+    key.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(key)
+    return _to_response(key, name=request.name)
 
 
 @router.get("/keys", response_model=List[APIKeyResponse])
-async def list_api_keys(current_user: TokenData = Depends(get_current_user)):
+async def list_api_keys(
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """List all API keys for the current user"""
-    user_id = str(current_user.user_id)
-    
-    with get_conn() as conn:
-        rows = conn.execute(
-            text("""
-                SELECT id, provider, last_4, status, created_at, updated_at
-                FROM provider_keys
-                WHERE user_id = :user_id
-                ORDER BY created_at DESC
-            """),
-            {"user_id": user_id}
-        ).fetchall()
-    
-    keys = []
-    for row in rows:
-        keys.append(APIKeyResponse(
-            id=row[0],
-            provider=ProviderType(row[1]),
-            name=None,  # We don't store name in DB currently
-            key_preview=f"...{row[2]}",
-            created_at=row[4],
-            updated_at=row[5],
-            is_valid=row[3] == 'active'
-        ))
-    
-    return keys
+    keys = db.scalars(
+        select(ProviderKey)
+        .where(ProviderKey.user_id == current_user.user_id)
+        .order_by(ProviderKey.created_at.desc())
+    ).all()
+    return [_to_response(k) for k in keys]
 
 
 @router.get("/keys/{provider}", response_model=APIKeyResponse)
 async def get_api_key(
     provider: ProviderType,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Get API key for a specific provider"""
-    user_id = str(current_user.user_id)
-    
-    with get_conn() as conn:
-        row = conn.execute(
-            text("""
-                SELECT id, provider, last_4, status, created_at, updated_at
-                FROM provider_keys
-                WHERE user_id = :user_id AND provider = :provider
-            """),
-            {"user_id": user_id, "provider": provider.value}
-        ).fetchone()
-    
-    if not row:
+    key = db.scalars(_user_key_stmt(current_user.user_id, provider.value)).first()
+    if key is None:
         raise HTTPException(status_code=404, detail=f"No API key found for {provider.value}")
-    
-    return APIKeyResponse(
-        id=row[0],
-        provider=ProviderType(row[1]),
-        name=None,
-        key_preview=f"...{row[2]}",
-        created_at=row[4],
-        updated_at=row[5],
-        is_valid=row[3] == 'active'
-    )
+    return _to_response(key)
 
 
 @router.delete("/keys/{key_id}")
 async def delete_api_key(
     key_id: UUID,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Delete an API key"""
-    user_id = str(current_user.user_id)
-    
-    with get_conn() as conn:
-        result = conn.execute(
-            text("""
-                DELETE FROM provider_keys
-                WHERE id = :key_id AND user_id = :user_id
-            """),
-            {"key_id": str(key_id), "user_id": user_id}
-        )
-        conn.commit()
-        
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="API key not found")
-    
+    key = db.get(ProviderKey, key_id)
+    if key is None or key.user_id != current_user.user_id:
+        raise HTTPException(status_code=404, detail="API key not found")
+    db.delete(key)
+    db.commit()
     return {"message": "API key deleted successfully", "key_id": key_id}
 
 
@@ -291,7 +213,7 @@ async def test_api_key(
                         "content-type": "application/json"
                     },
                     json={
-                        "model": "claude-3-haiku-20240307",
+                        "model": "claude-haiku-5-5",
                         "max_tokens": 10,
                         "messages": [{"role": "user", "content": "Hi"}]
                     },
@@ -336,14 +258,14 @@ async def list_providers():
         {
             "id": "openai",
             "name": "OpenAI",
-            "description": "GPT-4, GPT-3.5-turbo, and other OpenAI models",
+            "description": "GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna, and other OpenAI models",
             "key_format": "sk-...",
             "docs_url": "https://platform.openai.com/api-keys"
         },
         {
             "id": "anthropic",
             "name": "Anthropic",
-            "description": "Claude 3 models (Opus, Sonnet, Haiku)",
+            "description": "Claude Opus 5.5, Sonnet 5.5, Haiku 5.5, and Fable 5.1",
             "key_format": "sk-ant-...",
             "docs_url": "https://console.anthropic.com/settings/keys"
         },

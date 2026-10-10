@@ -520,7 +520,8 @@ Resources:
                   - DATABASE_URL=${!DB_CONNECTION}
                   - JWT_SECRET_KEY=${!JWT_KEY}
                   - JWT_ALGORITHM=HS256
-                  - JWT_EXPIRATION_MINUTES=1440
+                  # Session cookie / JWT lifetime; the dashboard refreshes it on activity
+                  - ACCESS_TOKEN_EXPIRE_MINUTES=720
                   - GOOGLE_CLIENT_ID=${!GOOGLE_CLIENT_ID}
                   - GOOGLE_CLIENT_SECRET=${!GOOGLE_CLIENT_SECRET}
                   - GOOGLE_REDIRECT_URI=https://${DomainName}/api/v1/auth/callback/google

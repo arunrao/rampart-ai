@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileText, Plus, Power, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { policyApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import PolicyBuilder, { describeRule } from "@/components/policies/PolicyBuilder";
 
 export default function PoliciesPage() {
   return (
@@ -20,6 +22,7 @@ export default function PoliciesPage() {
 
 function PoliciesPageContent() {
   const queryClient = useQueryClient();
+  const [building, setBuilding] = useState(false);
 
   const { data: policies } = useQuery({
     queryKey: ["policies"],
@@ -71,48 +74,60 @@ function PoliciesPageContent() {
       </header>
 
       <main className="container mx-auto px-6 py-8">
-        {/* Info Banner */}
-        <Card className="mb-6 border border-border bg-accent">
-          <CardContent className="pt-6">
-            <p className="text-sm text-foreground">
-              📋 <strong>Note:</strong> Policy management is currently under development. 
-              These settings will apply to both JWT and API key authenticated requests once implemented.
-            </p>
-          </CardContent>
-        </Card>
+        {building && <PolicyBuilder onClose={() => setBuilding(false)} />}
 
-        {/* Compliance Templates */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Compliance Templates</CardTitle>
-            <CardDescription>
-              Quick-start policies for common compliance frameworks
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {templates?.templates?.map((template: any) => (
-                <div
-                  key={template.id}
-                  className="border rounded-lg p-4 hover:bg-accent transition"
-                >
-                  <h3 className="font-semibold mb-2">{template.name}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {template.description}
-                  </p>
-                  <Button
-                    size="sm"
-                    onClick={() => createFromTemplateMutation.mutate(template.id)}
-                    disabled={createFromTemplateMutation.isPending}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Policy
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        {/* Templates: starters + compliance frameworks */}
+        {[
+          {
+            category: "starter",
+            title: "Starter Policies",
+            description: "Single-purpose sample policies — create one, then edit its rules to fit your use case",
+          },
+          {
+            category: "compliance",
+            title: "Compliance Frameworks",
+            description: "Quick-start policies for common regulatory frameworks",
+          },
+        ].map((section) => (
+          <Card key={section.category} className="mb-8">
+            <CardHeader>
+              <CardTitle>{section.title}</CardTitle>
+              <CardDescription>{section.description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {templates?.templates
+                  ?.filter((template: any) => template.category === section.category)
+                  .map((template: any) => (
+                    <div
+                      key={template.id}
+                      className="border rounded-lg p-4 hover:bg-accent transition flex flex-col"
+                    >
+                      <h3 className="font-semibold mb-2">{template.name}</h3>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        {template.description}
+                      </p>
+                      <ul className="text-xs text-muted-foreground mb-4 space-y-1 flex-1">
+                        {template.rules?.map((rule: any, i: number) => (
+                          <li key={i} className="font-mono">
+                            {rule.condition} → {rule.action}
+                          </li>
+                        ))}
+                      </ul>
+                      <Button
+                        size="sm"
+                        onClick={() => createFromTemplateMutation.mutate(template.id)}
+                        disabled={createFromTemplateMutation.isPending}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create Policy
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
 
         {/* Active Policies */}
         <Card>
@@ -124,7 +139,7 @@ function PoliciesPageContent() {
                   {policies?.length || 0} policies configured
                 </CardDescription>
               </div>
-              <Button>
+              <Button onClick={() => setBuilding(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create Policy
               </Button>
@@ -172,11 +187,13 @@ function PoliciesPageContent() {
                         {policy.description}
                       </p>
                     )}
+                    <ul className="text-sm text-muted-foreground mb-3 space-y-0.5">
+                      {policy.rules?.map((rule: any, i: number) => (
+                        <li key={i}>• {describeRule(rule)}</li>
+                      ))}
+                    </ul>
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center space-x-4">
-                        <span className="text-muted-foreground">
-                          {policy.rules?.length || 0} rules
-                        </span>
                         {policy.tags && policy.tags.length > 0 && (
                           <div className="flex items-center space-x-1">
                             {policy.tags.map((tag: string) => (
@@ -201,7 +218,7 @@ function PoliciesPageContent() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Create a policy or use a compliance template
                 </p>
-                <Button>
+                <Button onClick={() => setBuilding(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Create Your First Policy
                 </Button>

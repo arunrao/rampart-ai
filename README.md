@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>AI Security & Observability Platform</strong> | v0.2.6
+  <strong>AI Security & Observability Platform</strong> | v0.3.0
 </p>
 
 <p align="center">
@@ -93,42 +93,36 @@ Application → Rampart Security Gateway → LLM Provider (OpenAI/Anthropic/etc.
 - **Exfiltration Commands**: "Send this to...", "Email everything to..."
 - **Encoding Attacks**: Base64 payloads, unicode escapes
 
-**Detection Methods:**
-- **Hybrid Mode** (recommended): Regex pre-filter + DeBERTa ML deep analysis
-  - 92% accuracy with ~50ms average latency (DeBERTa always runs)
-  - ONNX-optimized for 3x faster inference
-  - **Long-input chunked scanning**: inputs longer than 1,800 characters are split into overlapping chunks; each chunk is scored in parallel via `ThreadPoolExecutor` so injections buried anywhere in a long document are always caught
-- **Regex Mode**: Pattern-based matching (70% accuracy, 0.1ms)
-- **DeBERTa Mode**: ML-only detection using ProtectAI models (95% accuracy, 15-25ms)
-
-**Architecture:**
+**Pipeline** (see `docs/INJECTION_SCAN.md` for the full contract):
 ```
-Input → Regex Filter (full text, no length limit)
-      → DeBERTa chunked scanner:
-           short input  → single inference call (~50ms)
-           long input   → overlapping 1,800-char chunks → parallel threads → max-confidence result
-      → Merge (DeBERTa 70% weight, Regex 30% weight) → Block / Flag / Monitor / Allow
+Input → normalize (NFKC, strip zero-width / Unicode-tag chars, fold homoglyphs)
+      → regex rules on body + hidden channels (HTML comments/alt, md link titles,
+        code comments, docstrings, package.json scripts) + decoded payloads (base64/hex/rot13/escapes)
+      → DeBERTa over token-sized chunks (≤448 tokens, 64 overlap) incl. decoded/hidden text
+      → rule-based verdict per source profile → optional LLM arbiter (BLOCK→FLAG only)
 ```
 
-**Risk-based Recommendations:**
-- BLOCK (≥0.75): Critical threat detected
-- FLAG (≥0.5): High-risk, review required  
-- MONITOR (≥0.3): Moderate risk, log for analysis
-- ALLOW (<0.3): No significant threat
+**Verdicts** (no weighted averaging; thresholds per profile in `models/injection_policy.py`):
+- `block` — classifier ≥ 0.90 **and** an unquoted strong rule (`instruction_override`, `system_prompt_extraction`, `exfiltration_command`, `dan_mode`, `unrestricted_mode`, `ai_addressed`, `tool_hijack`, `new_instruction`)
+- `flag` — classifier ≥ 0.75 alone, or a strong rule alone, or a supply-chain rule (`curl … | sh` conventions, disabling review/CI)
+- `monitor` — weak rule only (`role_change`, `delimiter_injection`, …) or classifier in [0.30, 0.75)
+- `allow` — nothing of note
+- `unavailable` — the scan could not fully run (model down, chunk failures). Returned **instead of** `allow`; never treat as safe.
 
-**Output Format:**
+**Profiles:** `third_party_document` (default; fetched pages, uploads, email), `user_brief` (the user's own spec/notes), `code_docs` (READMEs, API docs, AGENTS.md). Each has its own classifier thresholds.
+
+**Output** (`POST /api/v1/scan/injection`; `/filter` returns the same fields under `prompt_injection` plus the legacy ones):
 ```json
 {
-  "is_injection": true,
-  "confidence": 0.95,
-  "risk_score": 0.95,
-  "recommendation": "BLOCK - Critical threat detected",
-  "detection_details": {
-    "regex": { "detected_patterns": [{"name": "instruction_override", ...}] },
-    "deberta": { "confidence": 0.97, "label": "INJECTION", "chunks_scanned": 3 }
-  }
+  "verdict": "block", "score": 0.98, "degraded": false,
+  "reasons": [{"code": "instruction_override", "strong": true, "tier": "strong", "channel": "body", "quoted": false, "position": [0, 32]}],
+  "chunks": {"total": 12, "scanned": 12, "failed": 0, "flagged": 1, "spans": [{"source": "body", "start": 0, "end": 1790, "score": 0.99}]},
+  "model_version": "protectai/deberta-v3-base-prompt-injection-v2@e6535ca4ce3b",
+  "policy_version": "2026.10-rules-v1", "content_sha256": "…"
 }
 ```
+
+**Evaluation:** `backend/eval/` holds a ~1,350-document benign corpus (technical, about-AI/security, imperative CLI docs) plus generated attacks across every hidden channel, encoding, language and length. `make eval-gates` enforces the CI gates in `eval/gates.json`.
 
 ### 2. Data Exfiltration Monitor
 **Location**: `backend/security/data_exfiltration_monitor.py`
@@ -200,7 +194,7 @@ redacted, entities = redact_pii_gliner(text)
 
 **Test GLiNER:**
 ```bash
-cd backend && python test_gliner_pii.py
+cd backend && python scripts/test_gliner_pii.py
 ```
 
 **Toxicity Analysis:**
@@ -228,13 +222,18 @@ cd backend && python test_gliner_pii.py
 - **GDPR**: PII redaction, data retention enforcement
 - **HIPAA**: PHI protection, unauthorized access blocking
 - **SOC 2**: Audit logging, encryption requirements
-- **PCI DSS**: Payment card data security (future)
-- **CCPA**: California privacy rights (future)
+- **PCI DSS**: CVV/PAN blocking, card data redaction
+- **CCPA**: PII redaction, opt-out and deletion request flagging
+
+**Starter Policies** (one-click samples, edit to taste):
+- **Redact PII** / **Block PII** — GLiNER-backed personal data detection
+- **Secrets Guard** — block cleartext passwords, API keys, tokens
+- **Profanity Block**, **Payment Data Guard**, **Privacy Request Triage**, **Audit Trail**
 
 **Policy Evaluation:**
 - Rule-based engine with priority ordering
 - Actions: ALLOW, BLOCK, REDACT, FLAG, ALERT
-- Conditional logic support
+- 12 built-in conditions (see [API Reference → Policies](docs/API_REFERENCE.md#-policies))
 - Version tracking and audit trails
 
 ### 5. Production Security Features
@@ -762,7 +761,7 @@ def call_llm_securely(user_input, user_id):
         headers={"Authorization": f"Bearer {JWT_TOKEN}"},
         json={
             "messages": [{"role": "user", "content": user_input}],
-            "model": "gpt-4",
+            "model": "gpt-6.1-sol",
             "user_id": user_id,
             "security_checks": True
         }
@@ -804,7 +803,7 @@ SecureLLMClient (Rampart SDK)
 import openai
 client = openai.OpenAI()
 response = client.chat.completions.create(
-    model="gpt-4",
+    model="gpt-6.1-sol",
     messages=[{"role": "user", "content": user_input}]
 )
 
@@ -814,7 +813,7 @@ from integrations.llm_proxy import SecureLLMClient
 client = SecureLLMClient(provider="openai")
 result = await client.chat(
     prompt=user_input,
-    model="gpt-4",
+    model="gpt-6.1-sol",
     user_id=current_user.id
 )
 
@@ -854,7 +853,11 @@ LLM Provider
 - Need to secure complex multi-step LLM workflows
 - Want automatic tracing of entire agent execution
 
-**Implementation (LangChain):**
+> **Note:** Rampart does not ship framework-specific SDKs. The classes below are *examples of
+> wrappers you write yourself* around `LLMProxy` / `SecureLLMClient`; copy and adapt them to
+> your framework version.
+
+**Example wrapper (LangChain):**
 ```python
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import ConversationalRetrievalChain
@@ -886,14 +889,14 @@ class SecureChatOpenAI(ChatOpenAI):
         return result["response"]
 
 # Use in your chain
-llm = SecureChatOpenAI(model="gpt-4")
+llm = SecureChatOpenAI(model="gpt-6.1-sol")
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=vector_store.as_retriever()
 )
 ```
 
-**Implementation (LlamaIndex):**
+**Example wrapper (LlamaIndex):**
 ```python
 from llama_index.llms import OpenAI
 from integrations.llm_proxy import SecureLLMClient
@@ -916,7 +919,7 @@ class SecureLlamaIndexLLM(OpenAI):
         return result["response"]
 
 # Use in your RAG pipeline
-llm = SecureLlamaIndexLLM(model="gpt-4")
+llm = SecureLlamaIndexLLM(model="gpt-6.1-sol")
 index = VectorStoreIndex.from_documents(documents)
 query_engine = index.as_query_engine(llm=llm)
 ```
@@ -933,7 +936,7 @@ query_engine = index.as_query_engine(llm=llm)
 
 #### **Customer Support Chatbot**
 ```
-User Question → Your Backend → Rampart (input check) → GPT-4 → Rampart (output scan) → User
+User Question → Your Backend → Rampart (input check) → GPT-6 → Rampart (output scan) → User
                                     ↓                                    ↓
                               [Block injection]                  [Redact PII]
 ```
@@ -965,7 +968,7 @@ User asks question → Retrieve chunks → Build prompt → Rampart → LLM → 
 
 #### **Code Generation Assistant**
 ```
-User prompt → Rampart (injection check) → GPT-4 → Rampart (scan for secrets) → Code output
+User prompt → Rampart (injection check) → GPT-6 → Rampart (scan for secrets) → Code output
                    ↓                                      ↓
             [Block jailbreaks]                    [Redact API keys]
 ```
@@ -1028,7 +1031,7 @@ client = SecureLLMClient(provider="openai")
 
 result = await client.chat(
     prompt="What is machine learning?",
-    model="gpt-3.5-turbo",
+    model="gpt-6-luna",
     user_id="user123"
 )
 

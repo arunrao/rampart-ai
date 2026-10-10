@@ -83,7 +83,7 @@ Answer:"""
         result = await self.llm_client.chat(
             prompt=user_prompt,
             system_prompt=system_prompt,
-            model="gpt-3.5-turbo",
+            model="gpt-6-luna",
             user_id=user_id
         )
         

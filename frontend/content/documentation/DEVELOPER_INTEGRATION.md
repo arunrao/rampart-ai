@@ -124,7 +124,7 @@ def call_openai(messages):
     client = openai.OpenAI(api_key="your-key")
     
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-6.1-sol",
         messages=messages
     )
     
@@ -207,7 +207,7 @@ def secure_chat_with_proxy(user_message: str, user_token: str) -> dict:
             "messages": [
                 {"role": "user", "content": user_message}
             ],
-            "model": "gpt-4",
+            "model": "gpt-6.1-sol",
             "provider": "openai",
             "security_checks": True
         }
@@ -365,7 +365,7 @@ def track_custom_metrics(user_token: str):
             "value": 1,
             "labels": {
                 "app": "my-chatbot",
-                "model": "gpt-4",
+                "model": "gpt-6.1-sol",
                 "user_tier": "premium"
             }
         }
@@ -386,7 +386,7 @@ client = RampartClient(
 # Simple secure chat
 response = await client.secure_chat(
     message="User input",
-    model="gpt-4",
+    model="gpt-6.1-sol",
     provider="openai"
 )
 
@@ -422,7 +422,7 @@ class RampartClient {
         this.headers = { 'Authorization': `Bearer ${token}` };
     }
     
-    async secureChat(message, model = 'gpt-4') {
+    async secureChat(message, model = 'gpt-6.1-sol') {
         // Security check
         const securityCheck = await axios.post(
             `${this.apiUrl}/security/analyze`,
@@ -512,7 +512,7 @@ class RampartClient {
     return response.json();
   }
 
-  async secureChat(messages: any[], model: string = 'gpt-4') {
+  async secureChat(messages: any[], model: string = 'gpt-6.1-sol') {
     const response = await fetch(`${this.apiUrl}/llm/chat`, {
       method: 'POST',
       headers: {
@@ -670,7 +670,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         messages: [{ role: 'user', content: message }],
-        model: 'gpt-4',
+        model: 'gpt-6.1-sol',
         provider: 'openai',
         security_checks: true
       })

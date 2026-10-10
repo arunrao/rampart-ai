@@ -56,7 +56,7 @@ POST /security/analyze
   ],
   "is_safe": false,
   "risk_score": 0.85,
-  "analyzed_at": "2024-01-01T12:00:00Z",
+  "analyzed_at": "2026-10-09T12:00:00Z",
   "processing_time_ms": 45.2,
   "trace_id": "optional-trace-id"
 }
@@ -167,7 +167,7 @@ POST /filter
     "patterns_matched": ["instruction_override"]
   },
   "filters_applied": ["pii", "toxicity", "prompt_injection"],
-  "analyzed_at": "2024-01-01T12:00:00Z",
+  "analyzed_at": "2026-10-09T12:00:00Z",
   "processing_time_ms": 152.78
 }
 ```
@@ -229,7 +229,7 @@ POST /llm/chat
     {"role": "system", "content": "You are a helpful assistant"},
     {"role": "user", "content": "What is the weather like?"}
   ],
-  "model": "gpt-4",
+  "model": "gpt-6.1-sol",
   "provider": "openai",
   "security_checks": true,
   "max_tokens": 1000,
@@ -256,7 +256,7 @@ POST /llm/chat
       "issues": []
     }
   },
-  "model": "gpt-4",
+  "model": "gpt-6.1-sol",
   "provider": "openai",
   "tokens_used": 45,
   "cost": 0.0018,
@@ -312,8 +312,8 @@ GET /keys
     "provider": "openai",
     "name": "My OpenAI Key",
     "key_preview": "...k-abc",
-    "created_at": "2024-01-01T12:00:00Z",
-    "updated_at": "2024-01-01T12:00:00Z",
+    "created_at": "2026-10-09T12:00:00Z",
+    "updated_at": "2026-10-09T12:00:00Z",
     "is_valid": true
   }
 ]
@@ -343,8 +343,8 @@ POST /keys
   "provider": "openai", 
   "name": "My OpenAI Key",
   "key_preview": "...k-abc",
-  "created_at": "2024-01-01T12:00:00Z",
-  "updated_at": "2024-01-01T12:00:00Z",
+  "created_at": "2026-10-09T12:00:00Z",
+  "updated_at": "2026-10-09T12:00:00Z",
   "is_valid": true
 }
 ```
@@ -445,7 +445,7 @@ GET /analytics/summary
     "total_calls": 7500,
     "total_tokens": 2500000,
     "total_cost": 125.50,
-    "top_models": ["gpt-4", "gpt-3.5-turbo"]
+    "top_models": ["gpt-6.1-sol", "gpt-6-luna"]
   },
   "performance": {
     "avg_security_latency_ms": 45.2,
@@ -571,8 +571,8 @@ GET /health
 ```json
 {
   "status": "healthy",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "version": "0.1.0",
+  "timestamp": "2026-10-09T12:00:00Z",
+  "version": "0.3.0",
   "services": {
     "api": "operational",
     "database": "operational", 
@@ -611,7 +611,7 @@ GET /status
   "security_models": {
     "prompt_injection": "loaded",
     "content_filter": "loaded",
-    "last_updated": "2024-01-01T10:00:00Z"
+    "last_updated": "2026-10-09T10:00:00Z"
   }
 }
 ```
@@ -666,6 +666,169 @@ PUT /settings
 }
 ```
 
+## 📋 Policies
+
+Policies are user-owned rule sets evaluated against content via `POST /policies/evaluate`. Each rule is a
+`condition` (what to look for) plus an `action` (what to do when it fires). Rules run highest `priority`
+first; any `block` makes the whole evaluation `allowed: false`.
+
+**Actions:** `allow` · `flag` · `alert` · `redact` (sets `modified_content` to `[REDACTED]`) · `block`
+
+**Conditions:**
+
+| Condition | Fires when | Detector |
+|-----------|-----------|----------|
+| `contains_pii` | Any personal data: name, email, phone, address, SSN, card number, DOB, passport, licence, bank account | GLiNER (`gliner-pii-small`); regex/keyword fallback if the model is unavailable |
+| `contains_phi` | Date of birth or medical record number detected, or PHI keywords (`patient`, `diagnosis`, `discharge summary`, …) | GLiNER + keywords |
+| `contains_card_data` | 13–19 digit card number or `XXXX-XXXX-XXXX-XXXX` PAN | regex |
+| `contains_cvv` | `cvv` / `cvc` / `security code` followed by 3–4 digits | regex |
+| `unencrypted_pan` | A PAN whose digits are not masked | regex |
+| `encryption_required` | Cleartext credential: `password=`, `secret_key:`, `api_key=`, `access_token=` … | regex |
+| `profanity` | A profane word (word-boundary match) | word list |
+| `data_sale_opt_out` | "do not sell", "opt out", "withdraw consent", … | keywords |
+| `right_to_delete` | "delete my data", "right to be forgotten", "right to erasure", … | keywords |
+| `audit_log_required` | Always — use with `flag` to leave an audit record on every request | — |
+| `data_retention_exceeded` | `context.data_retention_exceeded` is `true` | caller-supplied context |
+| `unauthorized_access` | `context.unauthorized_access` is `true` | caller-supplied context |
+
+Unknown condition names never fire.
+
+### List Policy Templates
+
+```http
+GET /policies/templates
+```
+
+Returns every template with its `category` (`starter` or `compliance`) and a full rule preview.
+
+**Starter policies** — small, single-purpose samples to adopt as-is or edit:
+
+| `id` | Name | Rules |
+|------|------|-------|
+| `pii_redaction` | Redact PII | `contains_pii → redact` |
+| `pii_block` | Block PII | `contains_pii → block` |
+| `secrets_guard` | Secrets Guard | `encryption_required → block` |
+| `profanity_block` | Profanity Block | `profanity → block` |
+| `payment_data_guard` | Payment Data Guard | `contains_cvv → block`, `contains_card_data → redact` |
+| `privacy_request_triage` | Privacy Request Triage | `data_sale_opt_out → flag`, `right_to_delete → flag` |
+| `audit_trail` | Audit Trail | `audit_log_required → flag` |
+
+**Compliance frameworks:** `gdpr`, `hipaa`, `soc2`, `pci_dss`, `ccpa`.
+
+**Response (excerpt):**
+```json
+{
+  "templates": [
+    {
+      "id": "pii_redaction",
+      "name": "Redact PII",
+      "category": "starter",
+      "description": "Redact personal data (names, addresses, SSNs, card numbers) before it reaches the model — for customer-facing chat",
+      "policy_type": "content_filter",
+      "tags": ["starter", "pii", "chat"],
+      "rules": [{"condition": "contains_pii", "action": "redact", "priority": 10, "metadata": null}]
+    }
+  ]
+}
+```
+
+### Create Policy from Template
+
+```http
+POST /policies/templates/{id}
+```
+
+Instantiates the template as a new policy owned by the caller. Returns `201` with the full `Policy`.
+Edit the result with `PUT /policies/{policy_id}` to tailor it.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/policies/templates/secrets_guard \
+  -H "Authorization: Bearer $JWT"
+```
+
+### Create Policy
+
+```http
+POST /policies
+```
+
+**Request Body:**
+```json
+{
+  "name": "Support bot guardrails",
+  "description": "Redact PII, block secrets and profanity",
+  "policy_type": "content_filter",
+  "enabled": true,
+  "tags": ["support"],
+  "rules": [
+    {"condition": "encryption_required", "action": "block",  "priority": 20},
+    {"condition": "profanity",           "action": "block",  "priority": 10},
+    {"condition": "contains_pii",        "action": "redact", "priority": 5}
+  ]
+}
+```
+
+`policy_type` is one of `content_filter`, `rate_limit`, `access_control`, `data_governance`, `compliance`.
+Returns `201` with the created `Policy` (adds `id`, `user_id`, `version: 1`, timestamps).
+
+### List / Get / Update / Delete / Toggle
+
+```http
+GET    /policies?policy_type=content_filter&enabled=true&limit=50&offset=0
+GET    /policies/{policy_id}
+PUT    /policies/{policy_id}          # same body as create; increments version
+DELETE /policies/{policy_id}
+PATCH  /policies/{policy_id}/toggle   # flips enabled; returns {"enabled": bool}
+```
+
+Policies are scoped to the authenticated user; another user's policy returns `404`.
+
+### Evaluate Content
+
+```http
+POST /policies/evaluate
+```
+
+**Request Body:**
+```json
+{
+  "content": "Card 4111 1111 1111 1111, cvv: 123",
+  "context": {},
+  "policy_ids": null
+}
+```
+
+`policy_ids` (optional) restricts evaluation to those policies; otherwise all of the caller's
+enabled policies run. `context` feeds the context-driven conditions.
+
+**Response:**
+```json
+{
+  "allowed": false,
+  "violations": [
+    {
+      "policy_id": "3f1c…",
+      "policy_name": "Payment Data Guard",
+      "rule_index": 0,
+      "action": "block",
+      "reason": "Rule condition 'contains_cvv' triggered"
+    },
+    {
+      "policy_id": "3f1c…",
+      "policy_name": "Payment Data Guard",
+      "rule_index": 1,
+      "action": "redact",
+      "reason": "Rule condition 'contains_card_data' triggered"
+    }
+  ],
+  "actions_taken": ["Payment Data Guard: block", "Payment Data Guard: redact"],
+  "modified_content": null
+}
+```
+
+`modified_content` is `null` when content is unchanged or blocked, `"[REDACTED]"` when a `redact` rule fired.
+`rule_index` is the position within the policy's rules after sorting by priority (highest first).
+
 ## ❌ Error Responses
 
 All endpoints return consistent error responses:
@@ -675,7 +838,7 @@ All endpoints return consistent error responses:
   "error": "Error type",
   "detail": "Detailed error message",
   "code": "ERROR_CODE",
-  "timestamp": "2024-01-01T12:00:00Z",
+  "timestamp": "2026-10-09T12:00:00Z",
   "trace_id": "trace-uuid"
 }
 ```

@@ -15,7 +15,9 @@ import pytest
 from tests.helpers import create_user_and_jwt
 
 _TEST_ROOT = pathlib.Path(__file__).resolve().parent
-_TEST_DB_PATH = _TEST_ROOT / ".pytest_rampart.sqlite"
+# Per-process file: a concurrent pytest session deleting a shared DB under our open
+# connections surfaces as "attempt to write a readonly database".
+_TEST_DB_PATH = _TEST_ROOT / f".pytest_rampart.{os.getpid()}.sqlite"
 
 
 def _ensure_test_env() -> None:
@@ -31,16 +33,27 @@ def _ensure_test_env() -> None:
 _ensure_test_env()
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    _ensure_test_env()
+def _reset_database() -> None:
+    """Start from an empty schema, then build it the way deploy does (Alembic head)."""
+    import api.db as db
+    from api.migrate import upgrade_database
+    from api.models import Base
+
     if _TEST_DB_PATH.exists():
         _TEST_DB_PATH.unlink()
-    import api.db as db
-
     db.reset_engine()
-    from api.db import init_all_tables
+    engine = db.get_engine()
+    if engine.dialect.name != "sqlite":
+        with engine.begin() as conn:
+            Base.metadata.drop_all(conn)
+            conn.execute(db.text("DROP TABLE IF EXISTS alembic_version"))
+    with engine.connect() as conn:
+        upgrade_database(conn)
 
-    init_all_tables()
+
+def pytest_configure(config: pytest.Config) -> None:
+    _ensure_test_env()
+    _reset_database()
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:

@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
 
 from tests.helpers import create_user_and_jwt
 
@@ -24,32 +23,29 @@ def admin_headers(monkeypatch) -> dict[str, str]:
 @pytest.fixture
 def seeded_usage():
     """A user with one API key, hourly usage rows and audit log entries."""
-    from api.db import get_conn
+    from api.db import get_session
+    from api.models import AuditLog, RampartApiKey, RampartApiKeyUsage
 
     email, uid, token = create_user_and_jwt()
-    key_id = str(uuid.uuid4())
+    key_id = uuid.uuid4()
     now = datetime.utcnow()
-    with get_conn() as conn:
-        conn.execute(text("""
-            INSERT INTO rampart_api_keys (id, user_id, key_name, key_prefix, key_hash, key_preview,
-                                          permissions, is_active, created_at, last_used_at)
-            VALUES (:id, :uid, 'seed', :prefix, :hash, 'rmp_seed', '[]', 1, :now, :now)
-        """), {"id": key_id, "uid": str(uid), "prefix": uuid.uuid4().hex[:8], "hash": uuid.uuid4().hex, "now": now})
-        conn.execute(text("""
-            INSERT INTO rampart_api_key_usage (api_key_id, endpoint, requests_count, tokens_used, cost_usd, date, hour)
-            VALUES (:k, '/filter', 10, 1500, 0.25, :d, :h)
-        """), {"k": key_id, "d": now.date().isoformat(), "h": now.hour})
+    with get_session() as s:
+        s.add(RampartApiKey(
+            id=key_id, user_id=uid, key_name="seed", key_prefix=uuid.uuid4().hex[:8], key_hash=uuid.uuid4().hex,
+            key_preview="rmp_seed", permissions=[], is_active=True, created_at=now, last_used_at=now,
+        ))
+        s.add(RampartApiKeyUsage(
+            api_key_id=key_id, endpoint="/filter", requests_count=10, tokens_used=1500, cost_usd=0.25,
+            date=now.date(), hour=now.hour,
+        ))
         for i, (status, latency) in enumerate([(200, 10.0), (200, 20.0), (403, 30.0), (401, 40.0)]):
-            conn.execute(text("""
-                INSERT INTO audit_logs (user_id, endpoint, http_method, ip_address, status_code,
-                                        processing_time_ms, event_type, timestamp)
-                VALUES (:uid, '/api/v1/filter', 'POST', '127.0.0.1', :status, :lat,
-                        :evt, :ts)
-            """), {"uid": str(uid), "status": status, "lat": latency,
-                   "evt": "auth_failure" if status == 401 else "api_request",
-                   "ts": now - timedelta(minutes=i)})
-        conn.commit()
-    return {"email": email, "user_id": str(uid), "key_id": key_id}
+            s.add(AuditLog(
+                user_id=str(uid), endpoint="/api/v1/filter", http_method="POST", ip_address="127.0.0.1",
+                status_code=status, processing_time_ms=latency,
+                event_type="auth_failure" if status == 401 else "api_request",
+                timestamp=now - timedelta(minutes=i),
+            ))
+    return {"email": email, "user_id": str(uid), "key_id": str(key_id)}
 
 
 @pytest.mark.unit

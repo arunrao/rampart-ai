@@ -27,7 +27,7 @@ const DEFAULT_PROVIDERS: Provider[] = [
   {
     id: "openai",
     name: "OpenAI",
-    description: "Use GPT models like GPT-4o, GPT-4.1, GPT-3.5.",
+    description: "Use GPT models like GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna.",
     key_format: "sk-...",
     docs_url: "https://platform.openai.com/docs/overview",
   },

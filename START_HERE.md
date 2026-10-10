@@ -171,10 +171,10 @@ project-rampart/
 docker-compose up -d
 
 # Test GLiNER PII detection
-cd backend && python test_gliner_pii.py
+cd backend && python scripts/test_gliner_pii.py
 
 # Test DeBERTa hybrid prompt injection detection
-cd backend && python test_deberta_integration.py
+cd backend && python scripts/test_deberta_integration.py
 
 # Run security tests
 make test
@@ -237,7 +237,7 @@ Defaults are merged with each request body; request fields override stored defau
 2. ✅ Configure `.env` (see docker-compose.yml for defaults)
 3. ✅ `docker-compose up -d` (downloads GLiNER models on first run)
 4. ✅ Open http://localhost:3000
-5. ✅ Test GLiNER: `cd backend && python test_gliner_pii.py`
+5. ✅ Test GLiNER: `cd backend && python scripts/test_gliner_pii.py`
 6. ✅ Try examples in `examples/` directory
 7. ✅ Read README.md for full feature list
 8. ✅ Integrate with your AI application

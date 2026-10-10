@@ -69,15 +69,16 @@ project-rampart/
 │   │   │   ├── policies.py   # Policy management
 │   │   │   └── content_filter.py  # Content filtering
 │   │   ├── config.py         # Configuration management
+│   │   ├── db.py             # Engine, sessions, legacy table init
+│   │   ├── models.py         # SQLAlchemy ORM models
 │   │   └── main.py           # FastAPI application
+│   ├── alembic/              # Database migrations (PostgreSQL)
 │   ├── models/               # ML models and detectors
 │   │   └── prompt_injection_detector.py
 │   ├── security/             # Security modules
 │   │   └── data_exfiltration_monitor.py
 │   ├── integrations/         # LLM provider integrations
 │   │   └── llm_proxy.py      # Secure LLM proxy
-│   ├── storage/              # Database models
-│   │   └── database.py
 │   └── requirements.txt      # Python dependencies
 │
 ├── frontend/                  # Next.js frontend
@@ -151,7 +152,7 @@ client = SecureLLMClient(provider="openai")
 
 result = await client.chat(
     prompt="What is machine learning?",
-    model="gpt-3.5-turbo",
+    model="gpt-6-luna",
     user_id="user123"
 )
 
