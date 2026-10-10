@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Create a JWT token for arunrao@gmail.com to test dashboard analytics
+Create a JWT token for an existing user, e.g. to test dashboard analytics.
+
+Usage: python scripts/create_user_token.py <email>
 """
 import sys
 from pathlib import Path
@@ -11,17 +13,17 @@ from api.db import get_conn
 from api.routes.auth import create_access_token
 from sqlalchemy import text
 
-def create_arun_token():
-    """Create a JWT token for arunrao@gmail.com"""
+def create_user_token(email: str):
+    """Create a JWT token for the given email"""
     with get_conn() as conn:
         # Find the user
         result = conn.execute(
             text("SELECT id, email FROM users WHERE email = :email"),
-            {"email": "arunrao@gmail.com"}
+            {"email": email}
         ).fetchone()
         
         if not result:
-            print("User arunrao@gmail.com not found")
+            print(f"User {email} not found")
             return
         
         user_id, email = result
@@ -35,4 +37,7 @@ def create_arun_token():
         return user_id, token
 
 if __name__ == "__main__":
-    create_arun_token()
+    if len(sys.argv) != 2:
+        print("Usage: python scripts/create_user_token.py <email>")
+        sys.exit(1)
+    create_user_token(sys.argv[1])

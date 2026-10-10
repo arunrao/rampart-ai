@@ -177,6 +177,10 @@ cat > /tmp/cfn-parameters.json << EOF
     "ParameterValue": "$DOMAIN_NAME"
   },
   {
+    "ParameterKey": "AcmCertificateArn",
+    "ParameterValue": "${ACM_CERTIFICATE_ARN:-}"
+  },
+  {
     "ParameterKey": "SuperAdminEmails",
     "ParameterValue": "${SUPER_ADMIN_EMAILS:-}"
   },

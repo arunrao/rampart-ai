@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Create a long-lived JWT token for arunrao@gmail.com for testing
+Create a long-lived JWT token for an existing user, for testing.
+
+Usage: python scripts/create_long_token.py <email>
 """
 import sys
 from pathlib import Path
@@ -14,19 +16,19 @@ from sqlalchemy import text
 from datetime import datetime, timedelta
 import jwt
 
-def create_long_token():
-    """Create a long-lived JWT token for arunrao@gmail.com"""
+def create_long_token(email: str):
+    """Create a long-lived JWT token for the given email"""
     settings = get_settings()
     
     with get_conn() as conn:
         # Find the user
         result = conn.execute(
             text("SELECT id, email FROM users WHERE email = :email"),
-            {"email": "arunrao@gmail.com"}
+            {"email": email}
         ).fetchone()
         
         if not result:
-            print("User arunrao@gmail.com not found")
+            print(f"User {email} not found")
             return
         
         user_id, email = result
@@ -50,4 +52,7 @@ def create_long_token():
         return user_id, token
 
 if __name__ == "__main__":
-    create_long_token()
+    if len(sys.argv) != 2:
+        print("Usage: python scripts/create_long_token.py <email>")
+        sys.exit(1)
+    create_long_token(sys.argv[1])

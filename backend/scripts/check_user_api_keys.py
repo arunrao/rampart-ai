@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Check API keys and usage for arunrao@gmail.com
+Check API keys and usage for a given user.
+
+Usage: python scripts/check_user_api_keys.py <email>
 """
 import sys
 from pathlib import Path
@@ -10,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/
 from api.db import get_conn
 from sqlalchemy import text
 
-def check_user_api_keys():
-    """Check API keys and usage for arunrao@gmail.com"""
+def check_user_api_keys(email: str):
+    """Check API keys and usage for the given email"""
     with get_conn() as conn:
         # Find the user and API key
         result = conn.execute(
@@ -21,7 +23,7 @@ def check_user_api_keys():
                 JOIN users u ON k.user_id = u.id
                 WHERE u.email = :email
             """),
-            {"email": "arunrao@gmail.com"}
+            {"email": email}
         ).fetchall()
         
         if result:
@@ -59,7 +61,10 @@ def check_user_api_keys():
                     print("No usage stats found")
                 print("=" * 50)
         else:
-            print("No API keys found for arunrao@gmail.com")
+            print(f"No API keys found for {email}")
 
 if __name__ == "__main__":
-    check_user_api_keys()
+    if len(sys.argv) != 2:
+        print("Usage: python scripts/check_user_api_keys.py <email>")
+        sys.exit(1)
+    check_user_api_keys(sys.argv[1])

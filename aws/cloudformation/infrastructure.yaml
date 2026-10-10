@@ -16,6 +16,11 @@ Parameters:
     Default: ""
     Description: (Optional) Your domain name (e.g., rampart.yourdomain.com)
 
+  AcmCertificateArn:
+    Type: String
+    Default: ""
+    Description: (Optional) ARN of an existing ACM certificate covering DomainName, in this region. Required for HTTPS when DomainName is set.
+
   GoogleClientId:
     Type: String
     NoEcho: true
@@ -60,7 +65,7 @@ Parameters:
 
 Conditions:
   HasDomain: !Not [!Equals [!Ref DomainName, ""]]
-  CreateSSL: !Not [!Equals [!Ref DomainName, ""]]
+  CreateSSL: !Not [!Equals [!Ref AcmCertificateArn, ""]]
 
 Resources:
   # VPC and Networking
@@ -334,9 +339,6 @@ Resources:
       Roles:
         - !Ref EC2Role
 
-  # Note: Using existing SSL certificate ARN when domain is provided
-  # Certificate ARN: arn:aws:acm:us-west-2:892987205044:certificate/58b67402-23b3-4bff-8aac-51cd4135d56a
-
   # Application Load Balancer
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -409,7 +411,7 @@ Resources:
       Port: 443
       Protocol: HTTPS
       Certificates:
-        - CertificateArn: arn:aws:acm:us-west-2:892987205044:certificate/58b67402-23b3-4bff-8aac-51cd4135d56a
+        - CertificateArn: !Ref AcmCertificateArn
 
   BackendListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
