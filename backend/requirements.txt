@@ -36,7 +36,7 @@ transformers>=5.10.0,<5.17       # <5.10 has RCE/path-traversal CVEs; upper boun
 # torch>=2.0.0                   # Installed separately via CPU-only index in Dockerfile (saves 3GB)
 # optimum[onnxruntime]           # Disabled: optimum-onnx 0.1.0 pins transformers<4.58. DeBERTa/toxicity use the
 #                                # PyTorch path (automatic fallback) until optimum-onnx supports transformers 5.x.
-sentencepiece>=0.1.99            # Tokenizer for DeBERTa
+sentencepiece>=0.2.2            # Tokenizer for DeBERTa
 accelerate>=0.20.0               # Required for transformers model loading
 
 # Optional: Microsoft Presidio for PII (advanced)
