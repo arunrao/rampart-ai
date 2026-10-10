@@ -30,7 +30,7 @@ httpx==0.26.0
 
 # ML Models for Security
 gliner>=0.2.29                   # GLiNER for PII detection (transformers 5.x support)
-regex>=2023.8.8                  # Timeout-capable regex engine for user-supplied patterns (ReDoS guard)
+regex>=2026.9.29                  # Timeout-capable regex engine for user-supplied patterns (ReDoS guard)
 onnxruntime>=1.16.0              # ONNX runtime for optimized inference
 transformers>=5.10.0,<5.17       # <5.10 has RCE/path-traversal CVEs; upper bound from gliner 0.2.29
 # torch>=2.0.0                   # Installed separately via CPU-only index in Dockerfile (saves 3GB)
