@@ -2,7 +2,7 @@
 fastapi>=0.135.0                 # pulls starlette>=1.3.1 (CVE-2026-48710/54282/54283/48817/48818)
 uvicorn[standard]==0.27.0
 pydantic>=2.10,<3
-pydantic-settings>=2.6,<3
+pydantic-settings>=2.15.0,<3
 email-validator>=2.2.0
 
 # Database & Storage
