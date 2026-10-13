@@ -28,7 +28,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
-    "recharts": "^2.10.4",
+    "recharts": "^3.10.1",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.2.0"
   },
